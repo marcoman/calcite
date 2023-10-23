@@ -59,6 +59,8 @@ plugins {
     id("com.github.vlsi.license-gather") apply false
     id("com.github.vlsi.stage-vote-release")
     id("com.autonomousapps.dependency-analysis") apply false
+    id("com.gradle.enterprise") version("3.14.1")
+    id("com.gradle.common-custom-user-data-gradle-plugin") version("1.11.1")
 }
 
 repositories {
@@ -995,5 +997,31 @@ allprojects {
                 }
             }
         }
+    }
+}
+
+gradleEnterprise {
+    // Step 1 asks us to point to our gradle server.   Your server may be different.
+    // Plain-old http, so no self-signed certificate.  Instead, use an untrusted server.
+    // server = "http://ec2-44-203-143-70.compute-1.amazonaws.com"
+    server = "http://potato:9080"
+    allowUntrustedServer = true
+
+    // see https://docs.gradle.com/enterprise/gradle-plugin/#publishing_every_build
+    buildScan {
+        // Step 1 asks to always publish build scans.  This value does not change as it allows us to see the results
+        publishAlways()
+
+        // see https://docs.gradle.com/enterprise/gradle-plugin/#capturing_task_input_files
+        // for plugin >= 3.7
+        // Step 1 asks to enable the capture of task input files for CI and local builds.
+        capture {
+            isTaskInputFiles = true
+        }
+
+        // see https://docs.gradle.com/enterprise/gradle-plugin/#disabling_programmatically
+        // Step 1 asks us to disable build scan background upload for all CI builds
+        isUploadInBackground = true
+//        isUploadInBackground = System.genenv("CI") == null
     }
 }
