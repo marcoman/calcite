@@ -59,8 +59,8 @@ plugins {
     id("com.github.vlsi.license-gather") apply false
     id("com.github.vlsi.stage-vote-release")
     id("com.autonomousapps.dependency-analysis") apply false
-    id("com.gradle.enterprise") version("3.14.1")
-    id("com.gradle.common-custom-user-data-gradle-plugin") version("1.11.1")
+    // id("com.gradle.enterprise") version("3.14.1")
+    // id("com.gradle.common-custom-user-data-gradle-plugin") version("1.11.1")
 }
 
 repositories {
