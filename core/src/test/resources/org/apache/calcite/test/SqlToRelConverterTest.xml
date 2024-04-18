@@ -524,6 +524,20 @@ LogicalProject(EXPR$0=[ITEM(ITEM($3, 1).DETAIL.SKILLS, +(2, 3)).DESC])
 ]]>
     </Resource>
   </TestCase>
+  <TestCase name="testAvoidUnnecessaryMeasureProject">
+    <Resource name="sql">
+      <![CDATA[select deptno
+from empm
+group by deptno]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalAggregate(group=[{0}])
+  LogicalProject(DEPTNO=[$7])
+    LogicalTableScan(table=[[CATALOG, SALES, EMPM]])
+]]>
+    </Resource>
+  </TestCase>
   <TestCase name="testCase">
     <Resource name="plan">
       <![CDATA[
@@ -1965,6 +1979,17 @@ LogicalProject(EMPNO=[$0])
 ]]>
     </Resource>
   </TestCase>
+  <TestCase name="testExistsFunctionInSpark">
+    <Resource name="sql">
+      <![CDATA[select "EXISTS"(array(1,2,3), x -> false)]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(EXPR$0=[EXISTS(ARRAY(1, 2, 3), (X) -> false)])
+  LogicalValues(tuples=[[{ 0 }]])
+]]>
+    </Resource>
+  </TestCase>
   <TestCase name="testExplicitTable">
     <Resource name="sql">
       <![CDATA[table emp]]>
@@ -3301,6 +3326,17 @@ LogicalProject(EXPR$0=[*($0, 13:INTERVAL YEAR TO MONTH)])
 ]]>
     </Resource>
   </TestCase>
+  <TestCase name="testIntervalSecondNoFractionalPart">
+    <Resource name="sql">
+      <![CDATA[select interval '1' second(1,0) as h from emp]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(H=[1000:INTERVAL SECOND(1, 0)])
+  LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
   <TestCase name="testIsDistinctFrom">
     <Resource name="plan">
       <![CDATA[
@@ -3799,11 +3835,10 @@ LogicalProject(DEPTNO=[$9], SAL=[$7])
     LogicalTableScan(table=[[CATALOG, SALES, DEPT]])
     LogicalJoin(condition=[true], joinType=[left])
       LogicalTableScan(table=[[CATALOG, SALES, EMP]])
-      LogicalAggregate(group=[{}], agg#0=[SINGLE_VALUE($0)])
-        LogicalProject(EXPR$0=[>($0, 0)])
-          LogicalAggregate(group=[{}], agg#0=[AVG($0)])
-            LogicalProject(SAL=[$5])
-              LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+      LogicalProject(EXPR$0=[>($0, 0)])
+        LogicalAggregate(group=[{}], agg#0=[AVG($0)])
+          LogicalProject(SAL=[$5])
+            LogicalTableScan(table=[[CATALOG, SALES, EMP]])
 ]]>
     </Resource>
   </TestCase>
@@ -4124,6 +4159,39 @@ from emp]]>
     <Resource name="plan">
       <![CDATA[
 LogicalProject(EXPR$0=[FORMAT JSON($1)], EXPR$1=[FORMAT JSON($1)], EXPR$2=[FORMAT JSON($1)], EXPR$3=[FORMAT JSON($1)])
+  LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testLambdaExpression">
+    <Resource name="sql">
+      <![CDATA[select higher_order_function(1, (x, y) -> y + 1)]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(EXPR$0=[HIGHER_ORDER_FUNCTION(1, (X, Y) -> +(Y, 1))])
+  LogicalValues(tuples=[[{ 0 }]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testLambdaExpression2">
+    <Resource name="sql">
+      <![CDATA[select higher_order_function2(1, () -> -1)]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(EXPR$0=[HIGHER_ORDER_FUNCTION2(1, () -> -1)])
+  LogicalValues(tuples=[[{ 0 }]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testLambdaExpression3">
+    <Resource name="sql">
+      <![CDATA[select higher_order_function(deptno, (x, deptno) -> deptno + 1) from emp]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(EXPR$0=[HIGHER_ORDER_FUNCTION($7, (X, DEPTNO) -> +(DEPTNO, 1))])
   LogicalTableScan(table=[[CATALOG, SALES, EMP]])
 ]]>
     </Resource>
@@ -4502,7 +4570,7 @@ group by deptno]]>
     <Resource name="plan">
       <![CDATA[
 LogicalAggregate(group=[{0}], C=[AGGREGATE($1)])
-  LogicalProject(DEPTNO=[$7], COUNT_PLUS_100=[$9], COUNT_TIMES_100=[$10])
+  LogicalProject(DEPTNO=[$7], COUNT_PLUS_100=[$9])
     LogicalTableScan(table=[[CATALOG, SALES, EMPM]])
 ]]>
     </Resource>
@@ -6215,6 +6283,28 @@ LogicalProject(EMPNO=[$0], ENAME=[$1], DEPTNO=[$2])
 ]]>
     </Resource>
   </TestCase>
+  <TestCase name="testRecursiveQuery">
+    <Resource name="sql">
+      <![CDATA[WITH RECURSIVE aux(i) AS (
+  VALUES (1)
+  UNION ALL
+  SELECT i+1 FROM aux WHERE i < 10
+)
+SELECT * FROM aux]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(I=[$0])
+  LogicalRepeatUnion(all=[true])
+    LogicalTableSpool(readType=[LAZY], writeType=[LAZY], table=[[AUX]])
+      LogicalValues(tuples=[[{ 1 }]])
+    LogicalTableSpool(readType=[LAZY], writeType=[LAZY], table=[[AUX]])
+      LogicalProject(EXPR$0=[+($0, 1)])
+        LogicalFilter(condition=[<($0, 10)])
+          LogicalTableScan(table=[[AUX]])
+]]>
+    </Resource>
+  </TestCase>
   <TestCase name="testReduceConstExpr">
     <Resource name="sql">
       <![CDATA[select sum(case when 'y' = 'n' then ename else 0.1 end) from emp]]>
@@ -6253,6 +6343,138 @@ LogicalAggregate(group=[{0}], CNT=[COUNT()])
     LogicalFilter(condition=[>(ITEM($0, 'N_NATIONKEY'), 5)])
       LogicalProject(**=[$0])
         LogicalTableScan(table=[[CATALOG, SALES, NATION]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testRemoveDistinctIfUnique1">
+    <Resource name="sql">
+      <![CDATA[SELECT
+    deptno,
+    COUNT(DISTINCT sal) as cds,
+    COUNT(sal) as cs,
+    SUM(DISTINCT sal) AS sds,
+    SUM(sal) AS ss
+FROM (
+    SELECT DISTINCT deptno, sal
+    FROM emp)
+GROUP BY deptno]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(DEPTNO=[$0], CDS=[$1], CS=[$2], SDS=[$3], SS=[$3])
+  LogicalAggregate(group=[{0}], CDS=[COUNT($1)], CS=[COUNT()], SDS=[SUM($1)])
+    LogicalAggregate(group=[{0, 1}])
+      LogicalProject(DEPTNO=[$7], SAL=[$5])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testRemoveDistinctIfUnique2">
+    <Resource name="sql">
+      <![CDATA[SELECT
+    COUNT(DISTINCT sal) as cds,
+    COUNT(sal) as cs,
+    SUM(DISTINCT sal) AS sds,
+    SUM(sal) AS ss
+FROM (
+    SELECT deptno, 1 as sal
+    FROM emp    GROUP BY deptno)GROUP BY deptno
+]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(CDS=[$1], CS=[$2], SDS=[$3], SS=[$3])
+  LogicalAggregate(group=[{0}], CDS=[COUNT($1)], CS=[COUNT()], SDS=[SUM($1)])
+    LogicalProject(DEPTNO=[$0], SAL=[1])
+      LogicalAggregate(group=[{0}])
+        LogicalProject(DEPTNO=[$7])
+          LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testRemoveDistinctIfUnique3">
+    <Resource name="sql">
+      <![CDATA[SELECT
+    COUNT(DISTINCT sal) as cds,
+    COUNT(sal) as cs,
+    SUM(DISTINCT sal) AS sds,
+    SUM(sal) AS ss
+FROM (
+    SELECT DISTINCT deptno, sal
+    FROM emp)
+]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalAggregate(group=[{}], CDS=[COUNT(DISTINCT $0)], CS=[COUNT()], SDS=[SUM(DISTINCT $0)], SS=[SUM($0)])
+  LogicalProject(SAL=[$1])
+    LogicalAggregate(group=[{0, 1}])
+      LogicalProject(DEPTNO=[$7], SAL=[$5])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testRemoveDistinctIfUnique4">
+    <Resource name="sql">
+      <![CDATA[SELECT
+    COUNT(DISTINCT sal) as cds,
+    COUNT(sal) as cs,
+    SUM(DISTINCT sal) AS sds,
+    SUM(sal) AS ss
+FROM (
+    SELECT deptno, sal
+    FROM emp    GROUP BY deptno, sal)GROUP BY deptno
+]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalProject(CDS=[$1], CS=[$2], SDS=[$3], SS=[$4])
+  LogicalAggregate(group=[{0}], CDS=[COUNT(DISTINCT $1)], CS=[COUNT()], SDS=[SUM(DISTINCT $1)], SS=[SUM($1)])
+    LogicalAggregate(group=[{0, 1}])
+      LogicalProject(DEPTNO=[$7], SAL=[$5])
+        LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testRemoveDistinctIfUnique5">
+    <Resource name="sql">
+      <![CDATA[SELECT COUNT(DISTINCT empno)
+FROM emp
+]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalAggregate(group=[{}], EXPR$0=[COUNT($0)])
+  LogicalProject(EMPNO=[$0])
+    LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testRemoveDistinctIfUnique6">
+    <Resource name="sql">
+      <![CDATA[SELECT deptno, COUNT(DISTINCT empno)
+FROM emp
+GROUP BY deptno]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalAggregate(group=[{0}], EXPR$1=[COUNT($1)])
+  LogicalProject(DEPTNO=[$7], EMPNO=[$0])
+    LogicalTableScan(table=[[CATALOG, SALES, EMP]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testRemoveDistinctIfUnique7">
+    <Resource name="sql">
+      <![CDATA[SELECT deptno, COUNT(DISTINCT empno)
+FROM emp
+GROUP BY ROLLUP(deptno)]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalAggregate(group=[{0}], groups=[[{0}, {}]], EXPR$1=[COUNT(DISTINCT $1)])
+  LogicalProject(DEPTNO=[$7], EMPNO=[$0])
+    LogicalTableScan(table=[[CATALOG, SALES, EMP]])
 ]]>
     </Resource>
   </TestCase>
@@ -7816,6 +8038,54 @@ LogicalProject(DEPTNO=[$1])
       LogicalTableScan(table=[[CATALOG, SALES, EMP]])
     LogicalProject(NAME=[$1], DEPTNO=[$0])
       LogicalTableScan(table=[[CATALOG, SALES, DEPT]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testTrimSampleOnTemporalTable1">
+    <Resource name="sql">
+      <![CDATA[select D, E from VIRTUALCOLUMNS.VC_T1  tablesample bernoulli(50)]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+Sample(mode=[bernoulli], rate=[0.5], repeatableSeed=[-])
+  LogicalProject(D=[$3], $f4=[+($0, 1)])
+    LogicalTableScan(table=[[CATALOG, VIRTUALCOLUMNS, VC_T1]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testTrimSampleOnTemporalTable2">
+    <Resource name="sql">
+      <![CDATA[select * from VIRTUALCOLUMNS.VC_T1  tablesample bernoulli(50)]]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+Sample(mode=[bernoulli], rate=[0.5], repeatableSeed=[-])
+  LogicalProject(A=[$0], B=[$1], C=[$2], D=[$3], $f4=[+($0, 1)])
+    LogicalTableScan(table=[[CATALOG, VIRTUALCOLUMNS, VC_T1]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testTrimSnapshotOnTemporalTable1">
+    <Resource name="sql">
+      <![CDATA[select D, E from VIRTUALCOLUMNS.VC_T1 for system_time as of TIMESTAMP '2011-01-02 00:00:00']]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalSnapshot(period=[2011-01-02 00:00:00])
+  LogicalProject(D=[$3], $f4=[+($0, 1)])
+    LogicalTableScan(table=[[CATALOG, VIRTUALCOLUMNS, VC_T1]])
+]]>
+    </Resource>
+  </TestCase>
+  <TestCase name="testTrimSnapshotOnTemporalTable2">
+    <Resource name="sql">
+      <![CDATA[select * from VIRTUALCOLUMNS.VC_T1 for system_time as of TIMESTAMP '2011-01-02 00:00:00']]>
+    </Resource>
+    <Resource name="plan">
+      <![CDATA[
+LogicalSnapshot(period=[2011-01-02 00:00:00])
+  LogicalProject(A=[$0], B=[$1], C=[$2], D=[$3], $f4=[+($0, 1)])
+    LogicalTableScan(table=[[CATALOG, VIRTUALCOLUMNS, VC_T1]])
 ]]>
     </Resource>
   </TestCase>

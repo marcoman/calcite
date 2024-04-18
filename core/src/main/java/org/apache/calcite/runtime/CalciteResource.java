@@ -109,8 +109,11 @@ public interface CalciteResource {
   @BaseMessage("ROW expression encountered in illegal context")
   ExInst<CalciteException> illegalRowExpression();
 
-  @BaseMessage("Illegal identifier '':''. Was expecting ''VALUE''")
+  @BaseMessage("Unexpected symbol '':''. Was expecting ''VALUE''")
   ExInst<CalciteException> illegalColon();
+
+  @BaseMessage("Unexpected symbol '',''. Was expecting ''VALUE''")
+  ExInst<CalciteException> illegalComma();
 
   @BaseMessage("TABLESAMPLE percentage must be between 0 and 100, inclusive")
   @Property(name = "SQLSTATE", value = "2202H")
@@ -241,6 +244,9 @@ public interface CalciteResource {
   ExInst<SqlValidatorException> paramNotFoundInFunctionDidYouMean(String a0,
       String a1, String a2);
 
+  @BaseMessage("Param ''{0}'' not found in lambda expression ''{1}''")
+  ExInst<SqlValidatorException> paramNotFoundInLambdaExpression(String a0, String a1);
+
   @BaseMessage("Operand {0} must be a query")
   ExInst<SqlValidatorException> needQueryOp(String a0);
 
@@ -298,7 +304,7 @@ public interface CalciteResource {
   @BaseMessage("Date literal ''{0}'' out of range")
   ExInst<SqlValidatorException> dateLiteralOutOfRange(String a0);
 
-  @BaseMessage("Input arguments of {0} out of range: {1,number,#}; should be in the range of {2}")
+  @BaseMessage("Input arguments of {0} out of range: {1,number,#.#}; should be in the range of {2}")
   ExInst<CalciteException> inputArgumentsOfFunctionOutOfRange(String a0, Number a1, String a2);
 
   @BaseMessage("String literal continued on same line")
@@ -487,7 +493,7 @@ public interface CalciteResource {
   @BaseMessage("QUALIFY expression ''{0}'' must contain a window function")
   ExInst<SqlValidatorException> qualifyExpressionMustContainWindowFunction(String a0);
 
-  @BaseMessage("ROW/RANGE not allowed with RANK, DENSE_RANK or ROW_NUMBER functions")
+  @BaseMessage("ROW/RANGE not allowed with RANK, DENSE_RANK, ROW_NUMBER or PERCENTILE_CONT/DISC functions")
   ExInst<SqlValidatorException> rankWithFrame();
 
   @BaseMessage("RANK or DENSE_RANK functions require ORDER BY clause in window specification")
@@ -849,6 +855,12 @@ public interface CalciteResource {
   @BaseMessage("Must contain an ORDER BY clause when WITHIN is used")
   ExInst<SqlValidatorException> cannotUseWithinWithoutOrderBy();
 
+  @BaseMessage("A recursive query only supports UNION [ALL] operator")
+  ExInst<SqlValidatorException> recursiveWithMustHaveUnionSetOp();
+
+  @BaseMessage("A recursive query only supports binary UNION [ALL] operator")
+  ExInst<SqlValidatorException> recursiveWithMustHaveTwoChildUnionSetOp();
+
   @BaseMessage("First column of ORDER BY must be of type TIMESTAMP")
   ExInst<SqlValidatorException> firstColumnOfOrderByMustBeTimestamp();
 
@@ -1019,11 +1031,14 @@ public interface CalciteResource {
   ExInst<RuntimeException> invalidRegexInputForRegexpFunctions(String value, String methodName);
 
   @BaseMessage("Multiple capturing groups (count={0}) not allowed in regex input for {1}")
-  ExInst<RuntimeException> multipleCapturingGroupsForRegexpExtract(String value,
+  ExInst<RuntimeException> multipleCapturingGroupsForRegexpFunctions(String value,
       String methodName);
 
   @BaseMessage("Invalid input for REGEXP_REPLACE: ''{0}''")
   ExInst<CalciteException> invalidInputForRegexpReplace(String value);
+
+  @BaseMessage("Invalid replacement pattern for REGEXP_REPLACE: ''{0}''")
+  ExInst<CalciteException> invalidReplacePatternForRegexpReplace(String value);
 
   @BaseMessage("Invalid input for JSON_INSERT: jsonDoc: ''{0}'', kvs: ''{1}''")
   ExInst<CalciteException> invalidInputForJsonInsert(String jsonDoc, String kvs);
@@ -1069,6 +1084,9 @@ public interface CalciteResource {
 
   @BaseMessage("A table function at most has one input table with row semantics. Table function ''{0}'' has multiple input tables with row semantics")
   ExInst<SqlValidatorException> multipleRowSemanticsTables(String funcName);
+
+  @BaseMessage("SQL statement did not contain filters on the following fields: {0}")
+  ExInst<SqlValidatorException> mustFilterFieldsMissing(String mustFilterFields);
 
   @BaseMessage("BIT_GET/GETBIT error: negative position {0,number} not allowed")
   ExInst<CalciteException> illegalNegativeBitGetPosition(int position);

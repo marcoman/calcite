@@ -75,13 +75,15 @@ import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Optionality;
 import org.apache.calcite.util.Pair;
 
+import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableList;
 
-import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.Nullable;
 
 import java.util.List;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import static org.apache.calcite.linq4j.Nullness.castNonNull;
 
@@ -98,7 +100,9 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
   /**
    * The standard operator table.
    */
-  private static @MonotonicNonNull SqlStdOperatorTable instance;
+  private static final Supplier<SqlStdOperatorTable> INSTANCE =
+      Suppliers.memoize(() ->
+          (SqlStdOperatorTable) new SqlStdOperatorTable().init());
 
   //-------------------------------------------------------------
   //                   SET OPERATORS
@@ -313,7 +317,10 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
 
   /** The {@code RAND([seed])} function, which yields a random double,
    * optionally with seed. */
-  public static final SqlRandFunction RAND = new SqlRandFunction();
+  public static final SqlBasicFunction RAND = SqlBasicFunction
+      .create("RAND", ReturnTypes.DOUBLE,
+          OperandTypes.NILADIC.or(OperandTypes.NUMERIC), SqlFunctionCategory.NUMERIC)
+      .withDynamic(true);
 
   /**
    * Internal integer arithmetic division operator, '<code>/INT</code>'. This
@@ -1364,6 +1371,7 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
   /**
    * The <code>UNNEST WITH ORDINALITY</code> operator.
    */
+  @LibraryOperator(libraries = {}) // do not include in index
   public static final SqlUnnestOperator UNNEST_WITH_ORDINALITY =
       new SqlUnnestOperator(true);
 
@@ -1608,10 +1616,9 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
   public static final SqlFunction POSITION = new SqlPositionFunction("POSITION");
 
   public static final SqlBasicFunction CHAR_LENGTH =
-      SqlBasicFunction.create("CHAR_LENGTH",
+      SqlBasicFunction.create(SqlKind.CHAR_LENGTH,
           ReturnTypes.INTEGER_NULLABLE,
-          OperandTypes.CHARACTER,
-          SqlFunctionCategory.NUMERIC);
+          OperandTypes.CHARACTER);
 
   /** Alias for {@link #CHAR_LENGTH}. */
   public static final SqlFunction CHARACTER_LENGTH =
@@ -1770,11 +1777,11 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
           OperandTypes.NUMERIC,
           SqlFunctionCategory.NUMERIC);
 
-  /** The {@code ROUND(numeric [, numeric])} function. */
+  /** The {@code ROUND(numeric [, integer])} function. */
   public static final SqlFunction ROUND =
       SqlBasicFunction.create("ROUND",
           ReturnTypes.ARG0_NULLABLE,
-          OperandTypes.NUMERIC_OPTIONAL_INTEGER,
+          OperandTypes.NUMERIC.or(OperandTypes.NUMERIC_INT32),
           SqlFunctionCategory.NUMERIC);
 
   /** The {@code SIGN(numeric)} function. */
@@ -1798,11 +1805,11 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
           OperandTypes.NUMERIC,
           SqlFunctionCategory.NUMERIC);
 
-  /** The {@code TRUNCATE(numeric [, numeric])} function. */
+  /** The {@code TRUNCATE(numeric [, integer])} function. */
   public static final SqlBasicFunction TRUNCATE =
       SqlBasicFunction.create("TRUNCATE",
           ReturnTypes.ARG0_NULLABLE,
-          OperandTypes.NUMERIC_OPTIONAL_INTEGER,
+          OperandTypes.NUMERIC.or(OperandTypes.NUMERIC_INT32),
           SqlFunctionCategory.NUMERIC);
 
   /** The {@code PI} function. */
@@ -2099,7 +2106,7 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
    */
   public static final SqlFunction ELEMENT =
       SqlBasicFunction.create("ELEMENT",
-          ReturnTypes.MULTISET_ELEMENT_NULLABLE,
+          ReturnTypes.MULTISET_ELEMENT_FORCE_NULLABLE,
           OperandTypes.COLLECTION);
 
   /**
@@ -2260,7 +2267,8 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
               OperandTypes.UNIT_INTERVAL_NUMERIC_LITERAL)
           .withFunctionType(SqlFunctionCategory.SYSTEM)
           .withGroupOrder(Optionality.MANDATORY)
-          .withPercentile(true);
+          .withPercentile(true)
+          .withAllowsFraming(false);
 
   /**
    * {@code PERCENTILE_DISC} inverse distribution aggregate function.
@@ -2275,7 +2283,8 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
               OperandTypes.UNIT_INTERVAL_NUMERIC_LITERAL)
           .withFunctionType(SqlFunctionCategory.SYSTEM)
           .withGroupOrder(Optionality.MANDATORY)
-          .withPercentile(true);
+          .withPercentile(true)
+          .withAllowsFraming(false);
 
   /**
    * The LISTAGG operator. String aggregator function.
@@ -2540,15 +2549,16 @@ public class SqlStdOperatorTable extends ReflectiveSqlOperatorTable {
   /**
    * Returns the standard operator table, creating it if necessary.
    */
-  public static synchronized SqlStdOperatorTable instance() {
-    if (instance == null) {
-      // Creates and initializes the standard operator table.
-      // Uses two-phase construction, because we can't initialize the
-      // table until the constructor of the sub-class has completed.
-      instance = new SqlStdOperatorTable();
-      instance.init();
-    }
-    return instance;
+  public static SqlStdOperatorTable instance() {
+    return INSTANCE.get();
+  }
+
+  @Override protected void lookUpOperators(String name,
+      boolean caseSensitive, Consumer<SqlOperator> consumer) {
+    // Only UDFs are looked up using case-sensitive search.
+    // Always look up built-in operators case-insensitively. Even in sessions
+    // with unquotedCasing=UNCHANGED and caseSensitive=true.
+    super.lookUpOperators(name, false, consumer);
   }
 
   /** Returns the group function for which a given kind is an auxiliary

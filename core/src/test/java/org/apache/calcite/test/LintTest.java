@@ -22,12 +22,23 @@ import org.apache.calcite.util.Sources;
 import org.apache.calcite.util.TestUnsafe;
 import org.apache.calcite.util.Util;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JavaType;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.dataformat.yaml.YAMLMapper;
+
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.jupiter.api.Test;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -35,11 +46,16 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
+import static com.google.common.collect.Iterables.getOnlyElement;
+
+import static org.apache.calcite.util.Util.filter;
+
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Various automated checks on the code and git history. */
@@ -330,6 +346,8 @@ class LintTest {
         hasSize(1));
     assertThat(f.apply("[CALCITE-4817] cannot start with lower-case", ""),
         hasItem("Message must start with upper-case letter"));
+    assertThat(f.apply("[MINOR] Lint", ""),
+        hasItem("starts with '[', and is not '[CALCITE-nnnn]'"));
 
     // If 'Lint:skip' occurs in the body, no checks are performed
     assertThat(
@@ -359,6 +377,9 @@ class LintTest {
             + "problem, not what you did");
       }
     }
+    if (subject2.startsWith("[")) {
+      consumer.accept("starts with '[', and is not '[CALCITE-nnnn]'");
+    }
     if (subject2.startsWith(" ")) {
       consumer.accept("starts with space");
     }
@@ -371,6 +392,73 @@ class LintTest {
     if (subject2.matches("[a-z].*")) {
       consumer.accept("Message must start with upper-case letter");
     }
+  }
+
+  /** Ensures that the {@code contributors.yml} file is sorted by name. */
+  @Test void testContributorsFileIsSorted() throws IOException {
+    final ObjectMapper mapper = new YAMLMapper();
+    final List<File> files = TestUnsafe.getTextFiles();
+    final File contributorsFile =
+        getOnlyElement(
+            filter(files, f -> f.getName().equals("contributors.yml")));
+    JavaType listType =
+        mapper.getTypeFactory()
+            .constructCollectionType(List.class, Contributor.class);
+    List<Contributor> contributors =
+        mapper.readValue(contributorsFile, listType);
+    Contributor contributor =
+        firstOutOfOrder(contributors,
+            Comparator.comparing(c -> c.name, String.CASE_INSENSITIVE_ORDER));
+    if (contributor != null) {
+      fail("contributor '" + contributor.name + "' is out of order");
+    }
+  }
+
+  /** Ensures that the {@code .mailmap} file is sorted. */
+  @Test void testMailmapFile() {
+    final List<File> files = TestUnsafe.getTextFiles();
+    final File contributorsFile =
+        getOnlyElement(
+            filter(files, f -> f.getName().equals(".mailmap")));
+    final List<String> lines = new ArrayList<>();
+    forEachLineIn(contributorsFile, line -> {
+      if (!line.startsWith("#")) {
+        lines.add(line);
+      }
+    });
+    String line = firstOutOfOrder(lines, String.CASE_INSENSITIVE_ORDER);
+    if (line != null) {
+      fail("line '" + line + "' is out of order");
+    }
+  }
+
+  /** Performs an action for each line in a file. */
+  private static void forEachLineIn(File file, Consumer<String> consumer) {
+    try (BufferedReader r = Util.reader(file)) {
+      for (;;) {
+        String line = r.readLine();
+        if (line == null) {
+          break;
+        }
+        consumer.accept(line);
+      }
+    } catch (IOException e) {
+      throw Util.throwAsRuntime(e);
+    }
+  }
+
+  /** Returns the first element in a list that is out of order, or null if the
+   * list is sorted. */
+  private static <E> @Nullable E firstOutOfOrder(Iterable<E> elements,
+      Comparator<E> comparator) {
+    E previous = null;
+    for (E e : elements) {
+      if (previous != null && comparator.compare(previous, e) > 0) {
+        return e;
+      }
+      previous = e;
+    }
+    return null;
   }
 
   /** Warning that code is not as it should be. */
@@ -417,6 +505,16 @@ class LintTest {
 
     public boolean inJavadoc() {
       return javadocEndLine < javadocStartLine;
+    }
+  }
+
+  /** Contributor element in "contributors.yaml" file. */
+  @JsonIgnoreProperties(ignoreUnknown = true)
+  private static class Contributor {
+    final String name;
+
+    @JsonCreator Contributor(@JsonProperty("name") String name) {
+      this.name = name;
     }
   }
 }

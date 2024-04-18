@@ -97,6 +97,7 @@ import org.apache.calcite.runtime.SortedMultiMap;
 import org.apache.calcite.runtime.SpatialTypeFunctions;
 import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.runtime.SqlFunctions.FlatProductInputType;
+import org.apache.calcite.runtime.UrlFunctions;
 import org.apache.calcite.runtime.Utilities;
 import org.apache.calcite.runtime.XmlFunctions;
 import org.apache.calcite.schema.FilterableTable;
@@ -123,6 +124,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.nio.charset.Charset;
 import java.sql.ResultSet;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -288,7 +290,9 @@ public enum BuiltInMethod {
   AS_ENUMERABLE(Linq4j.class, "asEnumerable", Object[].class),
   AS_ENUMERABLE2(Linq4j.class, "asEnumerable", Iterable.class),
   ENUMERABLE_TO_LIST(ExtendedEnumerable.class, "toList"),
+  ENUMERABLE_TO_MAP(ExtendedEnumerable.class, "toMap", Function1.class, Function1.class),
   AS_LIST(Primitive.class, "asList", Object.class),
+  INTEGER_CAST(Primitive.class, "integerCast", Primitive.class, Object.class),
   MEMORY_GET0(MemoryFactory.Memory.class, "get"),
   MEMORY_GET1(MemoryFactory.Memory.class, "get", int.class),
   ENUMERATOR_CURRENT(Enumerator.class, "current"),
@@ -339,6 +343,8 @@ public enum BuiltInMethod {
   SORTED_MULTI_MAP_ARRAYS(SortedMultiMap.class, "arrays", Comparator.class),
   SORTED_MULTI_MAP_SINGLETON(SortedMultiMap.class, "singletonArrayIterator",
       Comparator.class, List.class),
+  IMMUTABLE_INT_LIST_IDENTITY(ImmutableIntList.class, "identity", int.class),
+  IMMUTABLE_INT_LIST_COPY_OF(ImmutableIntList.class, "copyOf", int[].class),
   BINARY_SEARCH5_LOWER(BinarySearch.class, "lowerBound", Object[].class,
       Object.class, int.class, int.class, Comparator.class),
   BINARY_SEARCH5_UPPER(BinarySearch.class, "upperBound", Object[].class,
@@ -377,6 +383,7 @@ public enum BuiltInMethod {
   DIFFERENCE(SqlFunctions.class, "difference", String.class, String.class),
   REVERSE(SqlFunctions.class, "reverse", String.class),
   LEVENSHTEIN(SqlFunctions.class, "levenshtein", String.class, String.class),
+  FIND_IN_SET(SqlFunctions.class, "findInSet", String.class, String.class),
   LEFT(SqlFunctions.class, "left", String.class, int.class),
   RIGHT(SqlFunctions.class, "right", String.class, int.class),
   TO_BASE64(SqlFunctions.class, "toBase64", String.class),
@@ -391,6 +398,8 @@ public enum BuiltInMethod {
   SHA512(SqlFunctions.class, "sha512", String.class),
   THROW_UNLESS(SqlFunctions.class, "throwUnless", boolean.class, String.class),
   COMPRESS(CompressionFunctions.class, "compress", String.class),
+  URL_DECODE(UrlFunctions.class, "urlDecode", String.class),
+  URL_ENCODE(UrlFunctions.class, "urlEncode", String.class),
   EXTRACT_VALUE(XmlFunctions.class, "extractValue", String.class, String.class),
   XML_TRANSFORM(XmlFunctions.class, "xmlTransform", String.class, String.class),
   EXTRACT_XML(XmlFunctions.class, "extractXml", String.class, String.class, String.class),
@@ -486,6 +495,7 @@ public enum BuiltInMethod {
   CSC(SqlFunctions.class, "csc", double.class),
   CSCH(SqlFunctions.class, "csch", double.class),
   DEGREES(SqlFunctions.class, "degrees", double.class),
+  FACTORIAL(SqlFunctions.class, "factorial", int.class),
   IS_INF(SqlFunctions.class, "isInf", long.class),
   IS_NAN(SqlFunctions.class, "isNaN", double.class),
   OVERLAY(SqlFunctions.class, "overlay", String.class, String.class, int.class),
@@ -503,6 +513,7 @@ public enum BuiltInMethod {
   SAFE_MULTIPLY(SqlFunctions.class, "safeMultiply", double.class, double.class),
   SAFE_SUBTRACT(SqlFunctions.class, "safeSubtract", double.class, double.class),
   LOG(SqlFunctions.class, "log", long.class, long.class),
+  LOG2(SqlFunctions.class, "log2", long.class),
   SEC(SqlFunctions.class, "sec", double.class),
   SECH(SqlFunctions.class, "sech", double.class),
   SIGN(SqlFunctions.class, "sign", long.class),
@@ -553,6 +564,8 @@ public enum BuiltInMethod {
       String.class, String.class, int.class, int.class),
   REGEXP_INSTR5(SqlFunctions.RegexFunction.class, "regexpInstr",
       String.class, String.class, int.class, int.class, int.class),
+  REGEXP_LIKE3(SqlFunctions.RegexFunction.class, "regexpLike",
+      String.class, String.class, String.class),
   REGEXP_REPLACE3(SqlFunctions.RegexFunction.class, "regexpReplace",
       String.class, String.class, String.class),
   REGEXP_REPLACE4(SqlFunctions.RegexFunction.class, "regexpReplace",
@@ -592,6 +605,7 @@ public enum BuiltInMethod {
       String.class, TimeZone.class),
   STRING_TO_TIMESTAMP_WITH_LOCAL_TIME_ZONE(SqlFunctions.class, "toTimestampWithLocalTimeZone",
       String.class),
+  STRING_TO_BINARY(SqlFunctions.class, "stringToBinary", String.class, Charset.class),
   TIMESTAMP_STRING_TO_TIMESTAMP_WITH_LOCAL_TIME_ZONE(SqlFunctions.class,
       "toTimestampWithLocalTimeZone", String.class, TimeZone.class),
   TIME_WITH_LOCAL_TIME_ZONE_TO_TIME(SqlFunctions.class, "timeWithLocalTimeZoneToTime",
@@ -633,13 +647,17 @@ public enum BuiltInMethod {
   PARSE_TIMESTAMP(SqlFunctions.DateParseFunction.class, "parseTimestamp",
       String.class, String.class),
   FORMAT_TIMESTAMP(SqlFunctions.DateFormatFunction.class, "formatTimestamp",
-      DataContext.class, String.class, long.class),
+      String.class, long.class),
   TO_CHAR(SqlFunctions.DateFormatFunction.class, "toChar", long.class,
       String.class),
+  TO_DATE(SqlFunctions.DateFormatFunction.class, "toDate", String.class,
+      String.class),
+  TO_TIMESTAMP(SqlFunctions.DateFormatFunction.class, "toTimestamp", String.class,
+      String.class),
   FORMAT_DATE(SqlFunctions.DateFormatFunction.class, "formatDate",
-      DataContext.class, String.class, int.class),
+      String.class, int.class),
   FORMAT_TIME(SqlFunctions.DateFormatFunction.class, "formatTime",
-      DataContext.class, String.class, int.class),
+      String.class, int.class),
   UNIX_DATE_TO_STRING(DateTimeUtils.class, "unixDateToString", int.class),
   UNIX_TIME_TO_STRING(DateTimeUtils.class, "unixTimeToString", int.class),
   UNIX_TIMESTAMP_TO_STRING(DateTimeUtils.class, "unixTimestampToString",
@@ -759,7 +777,7 @@ public enum BuiltInMethod {
   ARRAY_POSITION(SqlFunctions.class, "arrayPosition", List.class, Object.class),
   ARRAY_PREPEND(SqlFunctions.class, "arrayPrepend", List.class, Object.class),
   ARRAY_REMOVE(SqlFunctions.class, "arrayRemove", List.class, Object.class),
-  ARRAY_REPEAT(SqlFunctions.class, "repeat", Object.class, Integer.class),
+  ARRAY_REPEAT(SqlFunctions.class, "arrayRepeat", Object.class, Integer.class),
   ARRAY_EXCEPT(SqlFunctions.class, "arrayExcept", List.class, List.class),
   ARRAY_INSERT(SqlFunctions.class, "arrayInsert", List.class, Integer.class, Object.class),
   ARRAY_INTERSECT(SqlFunctions.class, "arrayIntersect", List.class, List.class),
@@ -767,8 +785,11 @@ public enum BuiltInMethod {
   ARRAY_REVERSE(SqlFunctions.class, "reverse", List.class),
   ARRAYS_OVERLAP(SqlFunctions.class, "arraysOverlap", List.class, List.class),
   ARRAYS_ZIP(SqlFunctions.class, "arraysZip", List.class, List.class),
+  EXISTS(SqlFunctions.class, "exists", List.class, Function1.class),
   SORT_ARRAY(SqlFunctions.class, "sortArray", List.class, boolean.class),
+  MAP(SqlFunctions.class, "map", Object[].class),
   MAP_CONCAT(SqlFunctions.class, "mapConcat", Map[].class),
+  MAP_CONTAINS_KEY(SqlFunctions.class, "mapContainsKey", Map.class, Object.class),
   MAP_ENTRIES(SqlFunctions.class, "mapEntries", Map.class),
   MAP_KEYS(SqlFunctions.class, "mapKeys", Map.class),
   MAP_VALUES(SqlFunctions.class, "mapValues", Map.class),
@@ -850,7 +871,7 @@ public enum BuiltInMethod {
   @SuppressWarnings("ImmutableEnumChecker")
   public final Field field;
 
-  public static final ImmutableMap<Method, BuiltInMethod> MAP;
+  public static final ImmutableMap<Method, BuiltInMethod> FUNCTIONS_MAPS;
 
   static {
     final ImmutableMap.Builder<Method, BuiltInMethod> builder =
@@ -860,7 +881,7 @@ public enum BuiltInMethod {
         builder.put(value.method, value);
       }
     }
-    MAP = builder.build();
+    FUNCTIONS_MAPS = builder.build();
   }
 
   BuiltInMethod(@Nullable Method method, @Nullable Constructor constructor, @Nullable Field field) {
