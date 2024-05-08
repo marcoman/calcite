@@ -1004,8 +1004,8 @@ gradleEnterprise {
     // Step 1 asks us to point to our gradle server.   Your server may be different.
     // Plain-old http, so no self-signed certificate.  Instead, use an untrusted server.
     // server = "http://ec2-44-203-143-70.compute-1.amazonaws.com"
-    server = "http://potato:9080"
-    allowUntrustedServer = true
+    server = "https://develocity-field.gradle.com/"
+    // allowUntrustedServer = true
 
     // see https://docs.gradle.com/enterprise/gradle-plugin/#publishing_every_build
     buildScan {
