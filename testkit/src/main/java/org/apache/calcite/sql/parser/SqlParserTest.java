@@ -21,6 +21,7 @@ import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlExplain;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLambda;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
@@ -42,6 +43,7 @@ import org.apache.calcite.test.IntervalTest;
 import org.apache.calcite.tools.Hoist;
 import org.apache.calcite.util.Bug;
 import org.apache.calcite.util.ConversionUtil;
+import org.apache.calcite.util.Litmus;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.TestUtil;
 import org.apache.calcite.util.Util;
@@ -81,6 +83,7 @@ import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.hasToString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 /**
@@ -1232,6 +1235,20 @@ public class SqlParserTest {
         .fails("Bang equal '!=' is not allowed under the current SQL conformance level");
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6178">[CALCITE-6178]
+   * WITH RECURSIVE query when cloned using sqlshuttle looses RECURSIVE property</a>. */
+  @Test void testRecursiveQueryCloned() throws Exception {
+    SqlNode sqlNode = sql("with RECURSIVE emp2 as "
+        + "(select * from emp union select * from emp2) select * from emp2").parser().parseStmt();
+    SqlNode sqlNode1 = sqlNode.accept(new SqlShuttle() {
+      @Override public SqlNode visit(SqlIdentifier identifier) {
+        return new SqlIdentifier(identifier.names, identifier.getParserPosition());
+      }
+    });
+    assertTrue(sqlNode.equalsDeep(sqlNode1, Litmus.IGNORE));
+  }
+
   @Test void testBetween() {
     sql("select * from t where price between 1 and 2")
         .ok("SELECT *\n"
@@ -1766,7 +1783,7 @@ public class SqlParserTest {
         .ok("CEIL((`X` + INTERVAL '1:20' MINUTE TO SECOND) TO MILLENNIUM)");
   }
 
-  @Test void testCast() {
+  @Test public void testCast() {
     expr("cast(x as boolean)")
         .ok("CAST(`X` AS BOOLEAN)");
     expr("cast(x as integer)")
@@ -1781,10 +1798,14 @@ public class SqlParserTest {
         .ok("CAST(`X` AS TIME)");
     expr("cast(x as time with local time zone)")
         .ok("CAST(`X` AS TIME WITH LOCAL TIME ZONE)");
+    expr("cast(x as time with time zone)")
+        .ok("CAST(`X` AS TIME WITH TIME ZONE)");
     expr("cast(x as timestamp without time zone)")
         .ok("CAST(`X` AS TIMESTAMP)");
     expr("cast(x as timestamp with local time zone)")
         .ok("CAST(`X` AS TIMESTAMP WITH LOCAL TIME ZONE)");
+    expr("cast(x as timestamp with time zone)")
+        .ok("CAST(`X` AS TIMESTAMP WITH TIME ZONE)");
     expr("cast(x as time(0))")
         .ok("CAST(`X` AS TIME(0))");
     expr("cast(x as time(0) without time zone)")
@@ -1829,14 +1850,6 @@ public class SqlParserTest {
   }
 
   @Test void testCastFails() {
-    expr("cast(x as time with ^time^ zone)")
-        .fails("(?s).*Encountered \"time\" at .*");
-    expr("cast(x as time(0) with ^time^ zone)")
-        .fails("(?s).*Encountered \"time\" at .*");
-    expr("cast(x as timestamp with ^time^ zone)")
-        .fails("(?s).*Encountered \"time\" at .*");
-    expr("cast(x as timestamp(0) with ^time^ zone)")
-        .fails("(?s).*Encountered \"time\" at .*");
     expr("cast(x as varchar(10) ^with^ local time zone)")
         .fails("(?s).*Encountered \"with\" at line 1, column 23.\n.*");
     expr("cast(x as varchar(10) ^without^ time zone)")
@@ -2415,6 +2428,58 @@ public class SqlParserTest {
     final String expected = "SELECT `DEPTNO`, GROUPING(`DEPTNO`)\n"
         + "FROM `EMP`\n"
         + "GROUP BY GROUPING SETS(`DEPTNO`, (`DEPTNO`, `GENDER`), ())";
+    sql(sql).ok(expected);
+  }
+
+  @Test void testWithRecursive() {
+    final String sql = "WITH RECURSIVE aux(i) AS (\n"
+        + "  VALUES (1)\n"
+        + "  UNION ALL\n"
+        + "  SELECT i+1 FROM aux WHERE i < 10\n"
+        + "  )\n"
+        + "  SELECT * FROM aux";
+    final String expected = "WITH RECURSIVE `AUX` (`I`) AS ((VALUES (ROW(1)))\n"
+        + "UNION ALL\n"
+        + "SELECT (`I` + 1)\n"
+        + "FROM `AUX`\n"
+        + "WHERE (`I` < 10)) SELECT *\n"
+        + "FROM `AUX`";
+    sql(sql).ok(expected);
+  }
+
+  @Test void testMultipleWithRecursive() {
+    final String sql = "WITH RECURSIVE a(x) AS\n"
+        + "  (SELECT 1),\n"
+        + "               b(y) AS\n"
+        + "  (SELECT x\n"
+        + "   FROM a\n"
+        + "   UNION ALL SELECT y + 1\n"
+        + "   FROM b\n"
+        + "   WHERE y < 2),\n"
+        + "               c(z) AS\n"
+        + "  (SELECT y\n"
+        + "   FROM b\n"
+        + "   UNION ALL SELECT z * 4\n"
+        + "   FROM c\n"
+        + "   WHERE z < 4 )\n"
+        + "SELECT *\n"
+        + "FROM a,\n"
+        + "     b,\n"
+        + "     c";
+    final String expected = "WITH RECURSIVE `A` (`X`) AS (SELECT 1), `B` (`Y`) AS (SELECT `X`\n"
+        + "FROM `A`\n"
+        + "UNION ALL\n"
+        + "SELECT (`Y` + 1)\n"
+        + "FROM `B`\n"
+        + "WHERE (`Y` < 2)), `C` (`Z`) AS (SELECT `Y`\n"
+        + "FROM `B`\n"
+        + "UNION ALL\n"
+        + "SELECT (`Z` * 4)\n"
+        + "FROM `C`\n"
+        + "WHERE (`Z` < 4)) SELECT *\n"
+        + "FROM `A`,\n"
+        + "`B`,\n"
+        + "`C`";
     sql(sql).ok(expected);
   }
 
@@ -3347,10 +3412,9 @@ public class SqlParserTest {
         .ok(expected);
   }
 
-  /** Even in SQL Server conformance mode, we do not yet support
-   * 'function(args)' as an abbreviation for 'table(function(args)'. */
+  /** We now support 'function(args)' as an abbreviation for 'table(function(args)'. */
   @Test void testOuterApplyFunctionFails() {
-    final String sql = "select * from dept outer apply ramp(deptno^)^)";
+    final String sql = "select * from dept outer apply ramp(deptno)^)^";
     sql(sql)
         .withConformance(SqlConformanceEnum.SQL_SERVER_2008)
         .fails("(?s).*Encountered \"\\)\" at .*");
@@ -4523,8 +4587,15 @@ public class SqlParserTest {
     sql(sql).ok(expected);
   }
 
-  @Test void testTableFunction() {
+  @Test void testTableFunctionWithTableWrapper() {
     final String sql = "select * from table(score(table orders))";
+    final String expected = "SELECT *\n"
+        + "FROM TABLE(`SCORE`((TABLE `ORDERS`)))";
+    sql(sql).ok(expected);
+  }
+
+  @Test void testTableFunctionWithoutTableWrapper() {
+    final String sql = "select * from score(table orders)";
     final String expected = "SELECT *\n"
         + "FROM TABLE(`SCORE`((TABLE `ORDERS`)))";
     sql(sql).ok(expected);
@@ -5475,8 +5546,11 @@ public class SqlParserTest {
     expr("^DATE '12/21/99'^").same();
     expr("^TIME '1230:33'^").same();
     expr("^TIME '12:00:00 PM'^").same();
+    expr("^TIME WITH LOCAL TIME ZONE '12:00:00 PM'^").same();
+    expr("^TIME WITH TIME ZONE '12:00:00 PM GMT+0:00'^").same();
     expr("TIMESTAMP '12-21-99, 12:30:00'").same();
     expr("TIMESTAMP WITH LOCAL TIME ZONE '12-21-99, 12:30:00'").same();
+    expr("TIMESTAMP WITH TIME ZONE '12-21-99, 12:30:00 GMT+0:00'").same();
     expr("DATETIME '12-21-99, 12:30:00'").same();
   }
 
@@ -5964,6 +6038,18 @@ public class SqlParserTest {
             + "FROM `T`)))");
   }
 
+  @Test void testMultisetQueryConstructor() {
+    sql("SELECT multiset(SELECT x FROM (VALUES(1)) x)")
+        .ok("SELECT (MULTISET ((SELECT `X`\n"
+            + "FROM (VALUES (ROW(1))) AS `X`)))");
+    sql("SELECT multiset(SELECT x FROM (VALUES(1)) x ^ORDER^ BY x)")
+        .fails("(?s)Encountered \"ORDER\" at.*");
+    sql("SELECT multiset(SELECT x FROM (VALUES(1)) x, ^SELECT^ x FROM (VALUES(1)) x)")
+        .fails("(?s)Incorrect syntax near the keyword 'SELECT' at.*");
+    sql("SELECT multiset(^1^, SELECT x FROM (VALUES(1)) x)")
+        .fails("(?s)Non-query expression encountered in illegal context");
+  }
+
   @Test void testMultisetUnion() {
     expr("a multiset union b")
         .ok("(`A` MULTISET UNION ALL `B`)");
@@ -6137,6 +6223,27 @@ public class SqlParserTest {
         .ok("CAST(`A` AS MAP< VARCHAR MULTISET, MAP< INTEGER, INTEGER > >)");
   }
 
+  /**
+   * Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-2980">[CALCITE-2980]
+   * Implement the FORMAT clause of the CAST operator</a>.
+   */
+  @Test void testFormatClauseInCast() {
+    expr("cast(date '2001-01-01' as varchar FORMAT 'YYYY Q MM')")
+        .ok("CAST(DATE '2001-01-01' AS VARCHAR FORMAT 'YYYY Q MM')");
+    expr("cast(time '1:30:00' as varchar format 'HH24')")
+        .ok("CAST(TIME '1:30:00' AS VARCHAR FORMAT 'HH24')");
+    expr("cast(timestamp '2008-12-25 12:15:00' as varchar format 'MON, YYYY')")
+        .ok("CAST(TIMESTAMP '2008-12-25 12:15:00' AS VARCHAR FORMAT 'MON, YYYY')");
+
+    expr("cast('18-12-03' as date format 'YY-MM-DD')")
+        .ok("CAST('18-12-03' AS DATE FORMAT 'YY-MM-DD')");
+    expr("cast('01:05:07.16' as time format 'HH24:MI:SS.FF4')")
+        .ok("CAST('01:05:07.16' AS TIME FORMAT 'HH24:MI:SS.FF4')");
+    expr("cast('2020.06.03 12:42:53' as timestamp format 'YYYY.MM.DD HH:MI:SS')")
+        .ok("CAST('2020.06.03 12:42:53' AS TIMESTAMP FORMAT 'YYYY.MM.DD HH:MI:SS')");
+  }
+
   @Test void testMapValueConstructor() {
     expr("map[1, 'x', 2, 'y']")
         .ok("(MAP[1, 'x', 2, 'y'])");
@@ -6144,6 +6251,49 @@ public class SqlParserTest {
         .ok("(MAP[1, 'x', 2, 'y'])");
     expr("map[]")
         .ok("(MAP[])");
+  }
+
+  @Test void testMapFunction() {
+    expr("map()").ok("MAP()");
+    expr("MAP()").same();
+    // parser allows odd elements; validator will reject it
+    expr("map(1)").ok("MAP(1)");
+    expr("map(1, 'x', 2, 'y')")
+        .ok("MAP(1, 'x', 2, 'y')");
+    // with upper case
+    expr("MAP(1, 'x', 2, 'y')").same();
+    // with space
+    expr("map (1, 'x', 2, 'y')")
+        .ok("MAP(1, 'x', 2, 'y')");
+  }
+
+  @Test void testMapQueryConstructor() {
+    // parser allows odd elements; validator will reject it
+    sql("SELECT map(SELECT 1)")
+        .ok("SELECT (MAP ((SELECT 1)))");
+    sql("SELECT map(SELECT 1, 2)")
+        .ok("SELECT (MAP ((SELECT 1, 2)))");
+    // with upper case
+    sql("SELECT MAP(SELECT 1, 2)")
+        .ok("SELECT (MAP ((SELECT 1, 2)))");
+    // with space
+    sql("SELECT map (SELECT 1, 2)")
+        .ok("SELECT (MAP ((SELECT 1, 2)))");
+    sql("SELECT map(SELECT T.x, T.y FROM (VALUES(1, 2)) AS T(x, y))")
+        .ok("SELECT (MAP ((SELECT `T`.`X`, `T`.`Y`\n"
+            + "FROM (VALUES (ROW(1, 2))) AS `T` (`X`, `Y`))))");
+    // with order by
+    // note: map subquery is not sql standard, parser allows order by,
+    // but has no sorting effect in runtime (sort will be removed)
+    sql("SELECT map(SELECT T.x, T.y FROM (VALUES(1, 2) ORDER BY T.x) AS T(x, y))")
+        .ok("SELECT (MAP ((SELECT `T`.`X`, `T`.`Y`\n"
+            + "FROM (VALUES (ROW(1, 2))\n"
+            + "ORDER BY `T`.`X`) AS `T` (`X`, `Y`))))");
+
+    sql("SELECT map(1, ^SELECT^ x FROM (VALUES(1)) x)")
+        .fails("(?s)Incorrect syntax near the keyword 'SELECT'.*");
+    sql("SELECT map(SELECT x FROM (VALUES(1)) x, ^SELECT^ x FROM (VALUES(1)) x)")
+        .fails("(?s)Incorrect syntax near the keyword 'SELECT' at.*");
   }
 
   @Test void testVisitSqlInsertWithSqlShuttle() {
@@ -7052,7 +7202,6 @@ public class SqlParserTest {
 
   @Test void testParensInFrom() {
     // UNNEST may not occur within parentheses.
-    // FIXME should fail at "unnest"
     sql("select *from (^unnest(x)^)")
         .fails("Expected query or join");
 
@@ -8692,6 +8841,16 @@ public class SqlParserTest {
         .ok("JSON_OBJECT(KEY 'foo' VALUE "
             + "JSON_OBJECT(KEY 'foo' VALUE 'bar' NULL ON NULL) "
             + "FORMAT JSON NULL ON NULL)");
+    expr("json_object('foo', 'bar')")
+        .ok("JSON_OBJECT(KEY 'foo' VALUE 'bar' NULL ON NULL)");
+    expr("json_object('foo', 'bar', 'baz', 'qux')")
+        .ok("JSON_OBJECT(KEY 'foo' VALUE 'bar', KEY 'baz' VALUE 'qux' NULL ON NULL)");
+    expr("json_object('foo', json_object('bar': 'baz') format json)")
+        .ok("JSON_OBJECT(KEY 'foo' VALUE "
+            + "JSON_OBJECT(KEY 'bar' VALUE 'baz' NULL ON NULL) "
+            + "FORMAT JSON NULL ON NULL)");
+    expr("json_object('foo', 'bar', 'baz'^)^")
+        .fails("(?s)Encountered \"\\)\".*Was expecting.*");
 
     if (!Bug.TODO_FIXED) {
       return;
@@ -9126,6 +9285,46 @@ public class SqlParserTest {
         + "where deptno < [3:DECIMAL:40]\n"
         + "and hiredate > [4:DATE:2010-05-06]";
     assertThat(hoisted.substitute(SqlParserTest::varToStr), is(expected2));
+  }
+
+  /** Tests {@link SqlLambda}. */
+  @Test public void testLambdaExpression() {
+    sql("select higher_order_func(1, (x, y) -> (x + y)) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(1, (`X`, `Y`) -> (`X` + `Y`))\n"
+            + "FROM `T`");
+
+    sql("select higher_order_func(1, (x, y) -> x + char_length(y)) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(1, (`X`, `Y`) -> (`X` + CHAR_LENGTH(`Y`)))\n"
+            + "FROM `T`");
+
+    sql("select higher_order_func(a -> a + 1, 1) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(`A` -> (`A` + 1), 1)\n"
+            + "FROM `T`");
+
+    sql("select higher_order_func((a) -> 1, 1) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(`A` -> 1, 1)\n"
+            + "FROM `T`");
+
+    sql("select higher_order_func(() -> 1 + 1, 1) from t")
+        .ok("SELECT `HIGHER_ORDER_FUNC`(() -> (1 + 1), 1)\n"
+            + "FROM `T`");
+
+    final String errorMessage1 = "(?s).*Encountered \"\\)\" at .*";
+    sql("select (^)^ -> 1")
+        .fails(errorMessage1);
+
+    sql("select * from t where (^)^ -> a = 1")
+        .fails(errorMessage1);
+
+    final String errorMessage2 = "(?s).*Encountered \"->\" at .*";
+    sql("select (a, b) ^->^ a + b")
+        .fails(errorMessage2);
+
+    sql("select * from t where (a, b) ^->^ a = 1")
+        .fails(errorMessage2);
+
+    sql("select 1 || (a, b) ^->^ a + b")
+        .fails(errorMessage2);
   }
 
   protected static String varToStr(Hoist.Variable v) {

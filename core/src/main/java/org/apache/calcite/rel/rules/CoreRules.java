@@ -272,7 +272,7 @@ public class CoreRules {
    * {@link org.apache.calcite.rel.rules.FilterProjectTransposeRule}.
    *
    * <p>It does not allow a Filter to be pushed past the Project if
-   * {@link RexUtil#containsCorrelation there is a correlation condition})
+   * {@link RexUtil#containsCorrelation there is a correlation condition}
    * anywhere in the Filter, since in some cases it can prevent a
    * {@link Correlate} from being de-correlated.
    */
@@ -320,6 +320,10 @@ public class CoreRules {
   /** Rule that pushes a {@link Filter} past a {@link SetOp}. */
   public static final FilterSetOpTransposeRule FILTER_SET_OP_TRANSPOSE =
       FilterSetOpTransposeRule.Config.DEFAULT.toRule();
+
+  /** Rule that pushes a {@link Filter} past a {@link org.apache.calcite.rel.core.Window}. */
+  public static final FilterWindowTransposeRule FILTER_WINDOW_TRANSPOSE =
+      FilterWindowTransposeRule.Config.DEFAULT.toRule();
 
   /** Rule that reduces constants inside a {@link LogicalFilter}.
    *
@@ -722,7 +726,7 @@ public class CoreRules {
 
   /** Rule that merge a {@link Sort} representing the Limit semantics and
    * another {@link Sort} representing the Limit or TOPN semantics. */
-  public static final SortMergeRule LIMIT_MREGE =
+  public static final SortMergeRule LIMIT_MERGE =
       SortMergeRule.Config.LIMIT_MERGE.toRule();
 
   /** Rule that removes keys from a {@link Sort}

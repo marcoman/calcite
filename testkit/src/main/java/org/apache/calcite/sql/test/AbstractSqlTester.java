@@ -25,6 +25,7 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.runtime.PairList;
 import org.apache.calcite.runtime.Utilities;
 import org.apache.calcite.sql.SqlCall;
+import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperator;
@@ -326,7 +327,7 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
    * @return Query that evaluates a scalar expression
    */
   protected String buildQuery2(SqlTestFactory factory, String expression) {
-    if (expression.matches("(?i).*(percentile_(cont|disc)|convert|sort_array)\\(.*")) {
+    if (expression.matches("(?i).*(percentile_(cont|disc)|convert|sort_array|cast)\\(.*")) {
       // PERCENTILE_CONT requires its argument to be a literal,
       // so converting its argument to a column will cause false errors.
       // Similarly, MSSQL-style CONVERT.
@@ -363,6 +364,9 @@ public abstract class AbstractSqlTester implements SqlTester, AutoCloseable {
 
           @Override public SqlNode visit(SqlCall call) {
             SqlOperator operator = call.getOperator();
+            if (operator.getKind() == SqlKind.LAMBDA) {
+              return call;
+            }
             if (operator instanceof SqlUnresolvedFunction) {
               final SqlUnresolvedFunction unresolvedFunction =
                   (SqlUnresolvedFunction) operator;

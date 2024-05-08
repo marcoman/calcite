@@ -44,6 +44,8 @@ import org.apache.calcite.rex.RexDynamicParam;
 import org.apache.calcite.rex.RexFieldAccess;
 import org.apache.calcite.rex.RexFieldCollation;
 import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLambda;
+import org.apache.calcite.rex.RexLambdaRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexLocalRef;
 import org.apache.calcite.rex.RexNode;
@@ -66,6 +68,7 @@ import org.apache.calcite.sql.SqlDynamicParam;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlJoin;
 import org.apache.calcite.sql.SqlKind;
+import org.apache.calcite.sql.SqlLambda;
 import org.apache.calcite.sql.SqlLiteral;
 import org.apache.calcite.sql.SqlMatchRecognize;
 import org.apache.calcite.sql.SqlNode;
@@ -668,6 +671,7 @@ public abstract class SqlImplementor {
               .field(lastAccess.getField().getIndex());
           break;
         case ROW:
+        case ITEM:
           final SqlNode expr = toSql(program, referencedExpr);
           sqlIdentifier = new SqlIdentifier(expr.toString(), POS);
           break;
@@ -778,6 +782,19 @@ public abstract class SqlImplementor {
           return SqlStdOperatorTable.NOT.createCall(POS, node);
         }
 
+      case LAMBDA:
+        final RexLambda lambda = (RexLambda) rex;
+        final SqlNodeList parameters = new SqlNodeList(POS);
+        for (RexLambdaRef parameter : lambda.getParameters()) {
+          parameters.add(toSql(program, parameter));
+        }
+        final SqlNode expression = toSql(program, lambda.getExpression());
+        return new SqlLambda(POS, parameters, expression);
+
+      case LAMBDA_REF:
+        final RexLambdaRef lambdaRef = (RexLambdaRef) rex;
+        return new SqlIdentifier(lambdaRef.getName(), POS);
+
       default:
         if (rex instanceof RexOver) {
           return toSql(program, (RexOver) rex);
@@ -813,6 +830,7 @@ public abstract class SqlImplementor {
       final List<SqlNode> nodeList = toSql(program, call.getOperands());
       switch (call.getKind()) {
       case CAST:
+      case SAFE_CAST:
         // CURSOR is used inside CAST, like 'CAST ($0): CURSOR NOT NULL',
         // convert it to sql call of {@link SqlStdOperatorTable#CURSOR}.
         final RelDataType dataType = call.getType();
@@ -1428,12 +1446,19 @@ public abstract class SqlImplementor {
       return SqlLiteral.createCharString((String) castNonNull(literal.getValue2()), POS);
     }
     case NUMERIC:
-    case EXACT_NUMERIC:
-      return SqlLiteral.createExactNumeric(
-          castNonNull(literal.getValueAs(BigDecimal.class)).toPlainString(), POS);
+    case EXACT_NUMERIC: {
+      if (SqlTypeName.APPROX_TYPES.contains(typeName)) {
+        return SqlLiteral.createApproxNumeric(
+            castNonNull(literal.getValueAs(BigDecimal.class)).toPlainString(), POS);
+      } else {
+        return SqlLiteral.createExactNumeric(
+            castNonNull(literal.getValueAs(BigDecimal.class)).toPlainString(), POS);
+      }
+    }
     case APPROXIMATE_NUMERIC:
-      return SqlLiteral.createApproxNumeric(
-          castNonNull(literal.getValueAs(BigDecimal.class)).toPlainString(), POS);
+      // This case is currently unreachable, because the type family can never be
+      // APPROXIMATE_NUMERIC -- see the definition of SqlTypeName.
+      throw new AssertionError("Unreachable");
     case BOOLEAN:
       return SqlLiteral.createBoolean(castNonNull(literal.getValueAs(Boolean.class)),
           POS);
@@ -1855,7 +1880,7 @@ public abstract class SqlImplementor {
       if (rel instanceof Project
           && clauses.contains(Clause.ORDER_BY)
           && dialect.getConformance().isSortByOrdinal()
-          && hasSortByOrdinal()) {
+          && hasSortByOrdinal(node)) {
         // Cannot merge a Project that contains sort by ordinal under it.
         return true;
       }
@@ -1907,25 +1932,33 @@ public abstract class SqlImplementor {
     }
 
     /**
-     * Return whether the current {@link SqlNode} in {@link Result} contains sort by column
-     * in ordinal format.
+     * Return whether the given {@link SqlNode} contains a sort by using an ordinal / numeric
+     * literal. Checks recursively if the node is a {@link SqlSelect} or a {@link SqlBasicCall}.
+     *
+     * @param sqlNode SqlNode to check
      */
-    private boolean hasSortByOrdinal(@UnknownInitialization Result this) {
-      if (node instanceof SqlSelect) {
-        final SqlNodeList orderList = ((SqlSelect) node).getOrderList();
+    private boolean hasSortByOrdinal(@UnknownInitialization Result this,
+                                     @Nullable SqlNode sqlNode) {
+      if (sqlNode == null) {
+        return false;
+      }
+      if (sqlNode instanceof SqlNumericLiteral) {
+        return true;
+      }
+      if (sqlNode instanceof SqlSelect) {
+        final SqlNodeList orderList = ((SqlSelect) sqlNode).getOrderList();
         if (orderList == null) {
           return false;
         }
-        for (SqlNode sqlNode : orderList) {
-          if (sqlNode instanceof SqlNumericLiteral) {
+        for (SqlNode child : orderList) {
+          if (hasSortByOrdinal(child)) {
             return true;
           }
-          if (sqlNode instanceof SqlBasicCall) {
-            for (SqlNode operand : ((SqlBasicCall) sqlNode).getOperandList()) {
-              if (operand instanceof SqlNumericLiteral) {
-                return true;
-              }
-            }
+        }
+      } else if (sqlNode instanceof SqlBasicCall) {
+        for (SqlNode operand : ((SqlBasicCall) sqlNode).getOperandList()) {
+          if (hasSortByOrdinal(operand)) {
+            return true;
           }
         }
       }

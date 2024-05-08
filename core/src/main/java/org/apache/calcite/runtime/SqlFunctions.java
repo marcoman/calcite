@@ -32,6 +32,7 @@ import org.apache.calcite.linq4j.function.Deterministic;
 import org.apache.calcite.linq4j.function.Experimental;
 import org.apache.calcite.linq4j.function.Function1;
 import org.apache.calcite.linq4j.function.NonDeterministic;
+import org.apache.calcite.linq4j.function.Predicate1;
 import org.apache.calcite.linq4j.tree.Primitive;
 import org.apache.calcite.rel.type.TimeFrame;
 import org.apache.calcite.rel.type.TimeFrameSet;
@@ -53,6 +54,7 @@ import org.apache.commons.codec.binary.Hex;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.codec.language.Soundex;
 import org.apache.commons.lang.StringEscapeUtils;
+import org.apache.commons.math3.util.CombinatoricsUtils;
 import org.apache.commons.text.similarity.LevenshteinDistance;
 
 import com.google.common.base.Splitter;
@@ -145,6 +147,8 @@ import static java.util.Objects.requireNonNull;
 @SuppressWarnings("UnnecessaryUnboxing")
 @Deterministic
 public class SqlFunctions {
+  private static final String COMMA_DELIMITER = ",";
+
   @SuppressWarnings("unused")
   private static final DecimalFormat DOUBLE_FORMAT =
       NumberUtil.decimalFormat("0.0E0");
@@ -389,12 +393,24 @@ public class SqlFunctions {
             .maximumSize(FUNCTION_LEVEL_CACHE_MAX_SIZE.value())
             .build(CacheLoader.from(Key::toPattern));
 
-    /** Helper for regex validation in REGEXP_* fns. */
+    private final LoadingCache<String, String> replacementStrCache =
+        CacheBuilder.newBuilder()
+            .maximumSize(FUNCTION_LEVEL_CACHE_MAX_SIZE.value())
+            .build(CacheLoader.from(RegexFunction::replaceNonDollarIndexedString));
+
+    /** Validate regex arguments in REGEXP_* fns, throws an exception
+     * for invalid regex patterns, else returns a Pattern object. */
     private Pattern validateRegexPattern(String regex, String methodName) {
+      return validateRegexPattern(regex, methodName, 0);
+    }
+
+    /** Validate regex arguments in REGEXP_* fns, throws an exception
+     * for invalid regex patterns, else returns a Pattern object. */
+    private Pattern validateRegexPattern(String regex, String methodName, int flags) {
       try {
         // Uses java.util.regex as a standard for regex processing
         // in Calcite instead of RE2 used by BigQuery/GoogleSQL
-        return cache.getUnchecked(new Key(0, regex));
+        return cache.getUnchecked(new Key(flags, regex));
       } catch (UncheckedExecutionException e) {
         if (e.getCause() instanceof PatternSyntaxException) {
           throw RESOURCE.invalidRegexInputForRegexpFunctions(
@@ -405,36 +421,68 @@ public class SqlFunctions {
       }
     }
 
-    /** Helper for multiple capturing group regex check in REGEXP_* fns. */
+    /** Checks for multiple capturing groups in regex arguments in REGEXP_*
+     * functions. Throws if the regex pattern has more than 1 capturing
+     * group. */
     private static void checkMultipleCapturingGroupsInRegex(Matcher matcher,
         String methodName) {
       if (matcher.groupCount() > 1) {
-        throw RESOURCE.multipleCapturingGroupsForRegexpExtract(
+        throw RESOURCE.multipleCapturingGroupsForRegexpFunctions(
             Integer.toString(matcher.groupCount()), methodName).ex();
       }
     }
 
-    /** Helper for checking values of position and occurrence arguments in REGEXP_* fns.
-     * Regex fns not using occurrencePosition param pass a default value of 0.
-     * Throws an exception or returns true in case of failed value checks. */
-    private static boolean checkPosOccurrenceParamValues(int position,
+    /** Validates the value ranges for position and occurrence arguments in
+     * REGEXP_* functions. Functions not using the {@code occurrencePosition}
+     * parameter pass a default value of 0. Throws an exception or returns
+     * false if any arguments are beyond accepted range; returns true if all
+     * argument values are valid. */
+    private static boolean validatePosOccurrenceParamValues(int position,
         int occurrence, int occurrencePosition, String value, String methodName) {
       if (position <= 0) {
-        throw RESOURCE.invalidIntegerInputForRegexpFunctions(Integer.toString(position),
-            "position", methodName).ex();
+        throw RESOURCE.invalidIntegerInputForRegexpFunctions(
+            Integer.toString(position), "position", methodName).ex();
       }
       if (occurrence <= 0) {
-        throw RESOURCE.invalidIntegerInputForRegexpFunctions(Integer.toString(occurrence),
-            "occurrence", methodName).ex();
+        throw RESOURCE.invalidIntegerInputForRegexpFunctions(
+            Integer.toString(occurrence), "occurrence", methodName).ex();
       }
       if (occurrencePosition != 0 && occurrencePosition != 1) {
-        throw RESOURCE.invalidIntegerInputForRegexpFunctions(Integer.toString(occurrencePosition),
-            "occurrence_position", methodName).ex();
+        throw RESOURCE.invalidIntegerInputForRegexpFunctions(
+            Integer.toString(occurrencePosition), "occurrence_position",
+                methodName).ex();
       }
-      if (position <= value.length()) {
-        return false;
+      return position <= value.length();
+    }
+
+    /** Preprocesses double-backslash-based indexing for capturing groups into
+     * $-based indices recognized by java regex, throws an error for invalid escapes. */
+    public static String replaceNonDollarIndexedString(String replacement) {
+      // Explicitly escaping any $ symbols coming from input
+      // to ignore them from being considered as capturing group index
+      String indexedReplacement =
+          replacement.replace("\\\\", "\\")
+              .replace("$", "\\$");
+
+      // Check each occurrence of escaped chars, convert '\<n>' integers into '$<n>' indices,
+      // keep occurrences of '\\' and '\$', throw an error for any other invalid escapes
+      int lastOccIdx = indexedReplacement.indexOf("\\");
+      while (lastOccIdx != -1 && lastOccIdx < indexedReplacement.length() - 1) {
+        // Fetch escaped symbol following the current '\' occurrence
+        final char escapedChar = indexedReplacement.charAt(lastOccIdx + 1);
+
+        // Replace '\<n>' with '$<n>' if escaped char is an integer
+        if (Character.isDigit(escapedChar)) {
+          indexedReplacement = indexedReplacement.replaceFirst("\\\\(\\d)", "\\$$1");
+        } else if (escapedChar != '\\' && escapedChar != '$') {
+          // Throw an error if escaped char is not an escaped '\' or an escaped '$'
+          throw RESOURCE.invalidReplacePatternForRegexpReplace(replacement).ex();
+        }
+        // Fetch next occurrence index after current escaped char
+        lastOccIdx = indexedReplacement.indexOf("\\", lastOccIdx + 2);
       }
-      return true;
+
+      return indexedReplacement;
     }
 
     /** SQL {@code REGEXP_CONTAINS(value, regexp)} function.
@@ -444,6 +492,14 @@ public class SqlFunctions {
       return pattern.matcher(value).find();
     }
 
+    /** SQL {@code REGEXP_LIKE(value, regexp, flags)} function.
+     * Throws a runtime exception for invalid regular expressions. */
+    @SuppressWarnings("unused")
+    public boolean regexpLike(String value, String regex, String stringFlags) {
+      final Pattern pattern =
+          validateRegexPattern(regex, "REGEXP_LIKE", makeRegexpFlags(stringFlags));
+      return pattern.matcher(value).find();
+    }
     /** SQL {@code REGEXP_EXTRACT(value, regexp)} function.
      * Returns NULL if there is no match. Returns an exception if regex is invalid.
      * Uses position=1 and occurrence=1 as default values when not specified. */
@@ -469,7 +525,7 @@ public class SqlFunctions {
       final String methodName = "REGEXP_EXTRACT";
       final Pattern pattern = validateRegexPattern(regex, methodName);
 
-      if (checkPosOccurrenceParamValues(position, occurrence, 0, value, methodName)) {
+      if (!validatePosOccurrenceParamValues(position, occurrence, 0, value, methodName)) {
         return null;
       }
 
@@ -546,8 +602,9 @@ public class SqlFunctions {
       final String methodName = "REGEXP_INSTR";
       final Pattern pattern = validateRegexPattern(regex, methodName);
 
-      if (checkPosOccurrenceParamValues(position, occurrence, occurrencePosition, value,
-          methodName) || regex.isEmpty()) {
+      if (regex.isEmpty()
+          || !validatePosOccurrenceParamValues(position, occurrence,
+              occurrencePosition, value, methodName)) {
         return 0;
       }
 
@@ -603,6 +660,26 @@ public class SqlFunctions {
       return Unsafe.regexpReplace(s, pattern, replacement, pos, occurrence);
     }
 
+    /** SQL {@code REGEXP_REPLACE} function with 3 arguments with
+     * {@code \\} based indexing for capturing groups. */
+    public String regexpReplaceNonDollarIndexed(String s, String regex,
+        String replacement) {
+      // Modify double-backslash capturing group indices in replacement argument,
+      // retrieved from cache when available.
+      String indexedReplacement;
+      try {
+        indexedReplacement = replacementStrCache.getUnchecked(replacement);
+      } catch (UncheckedExecutionException e) {
+        if (e.getCause() instanceof CalciteException) {
+          throw RESOURCE.invalidReplacePatternForRegexpReplace(replacement).ex();
+        }
+        throw e;
+      }
+
+      // Call generic regexp replace method with modified replacement pattern
+      return regexpReplace(s, regex, indexedReplacement, 1, 0, null);
+    }
+
     private static int makeRegexpFlags(String stringFlags) {
       int flags = 0;
       for (int i = 0; i < stringFlags.length(); ++i) {
@@ -617,7 +694,14 @@ public class SqlFunctions {
           flags |= Pattern.DOTALL;
           break;
         case 'm':
+          // PostgreSQL should actually interpret m to be a synonym for n, but this is
+          // relaxed for consistency.
           flags |= Pattern.MULTILINE;
+          break;
+        case 's':
+          // This flag is in PostgreSQL but doesn't apply to other libraries. This is relaxed
+          // for consistency.
+          flags &= ~Pattern.DOTALL;
           break;
         default:
           throw RESOURCE.invalidInputForRegexpReplace(stringFlags).ex();
@@ -860,17 +944,22 @@ public class SqlFunctions {
     assert map != null;
     Set<String> keys = map.keySet();
     Collection<String> values = map.values();
-    switch (JsonScope.valueOf(jsonScope)) {
-    case JSON_KEYS:
-      return keys.contains(substr);
-    case JSON_KEYS_AND_VALUES:
-      return keys.contains(substr) || values.contains(substr);
-    case JSON_VALUES:
-      return values.contains(substr);
-    default:
-      throw new IllegalArgumentException("json_scope argument must be one of: \"JSON_KEYS\", "
-          + "\"JSON_VALUES\", \"JSON_KEYS_AND_VALUES\".");
+    try {
+      switch (JsonScope.valueOf(jsonScope)) {
+      case JSON_KEYS:
+        return keys.contains(substr);
+      case JSON_KEYS_AND_VALUES:
+        return keys.contains(substr) || values.contains(substr);
+      case JSON_VALUES:
+        return values.contains(substr);
+      default:
+        break;
+      }
+    } catch (IllegalArgumentException ignored) {
+      // Happens when jsonScope is not one of the legal enum values
     }
+    throw new IllegalArgumentException("json_scope argument must be one of: \"JSON_KEYS\", "
+          + "\"JSON_VALUES\", \"JSON_KEYS_AND_VALUES\".");
   }
 
   /** SQL <code>CONTAINS_SUBSTR(expr, substr)</code> operator. */
@@ -909,14 +998,34 @@ public class SqlFunctions {
 
   /** SQL SUBSTRING(string FROM ...) function. */
   public static String substring(String c, int s) {
-    final int s0 = s - 1;
-    if (s0 <= 0) {
+    if (s <= 1) {
       return c;
     }
     if (s > c.length()) {
       return "";
     }
+    final int s0 = s - 1;
     return c.substring(s0);
+  }
+
+  // Clamp very large long values to integer values.
+  // Used by the substring functions.
+  // Java strings do not support long indexes anyway,
+  // so this is most likely a safe approximation.
+  // But if a string has more than 2^31 characters
+  // the result of calling String.substring will be wrong anyway.
+  static int clamp(long s) {
+    if (s < Integer.MIN_VALUE) {
+      return Integer.MIN_VALUE;
+    }
+    if (s > Integer.MAX_VALUE) {
+      return Integer.MAX_VALUE;
+    }
+    return (int) s;
+  }
+
+  public static String substring(String c, long s) {
+    return substring(c, clamp(s));
   }
 
   /** SQL SUBSTRING(string FROM ... FOR ...) function. */
@@ -936,15 +1045,27 @@ public class SqlFunctions {
     return c.substring(s0, (int) e0);
   }
 
+  public static String substring(String c, int s, long l) {
+    return substring(c, s, clamp(l));
+  }
+
+  public static String substring(String c, long s, int l) {
+    return substring(c, clamp(s), l);
+  }
+
+  public static String substring(String c, long s, long l) {
+    return substring(c, clamp(s), clamp(l));
+  }
+
   /** SQL SUBSTRING(binary FROM ...) function for binary. */
   public static ByteString substring(ByteString c, int s) {
-    final int s0 = s - 1;
-    if (s0 <= 0) {
+    if (s <= 1) {
       return c;
     }
     if (s > c.length()) {
       return ByteString.EMPTY;
     }
+    final int s0 = s - 1;
     return c.substring(s0);
   }
 
@@ -1075,6 +1196,29 @@ public class SqlFunctions {
   /** SQL LEVENSHTEIN(string1, string2) function. */
   public static int levenshtein(String string1, String string2) {
     return LEVENSHTEIN_DISTANCE.apply(string1, string2);
+  }
+
+  /** SQL FIND_IN_SET(matchStr, textStr) function.
+   * Returns the index (1-based) of the given matchStr
+   * in the comma-delimited list textStr. Returns 0,
+   * if the matchStr is not found or if the matchStr
+   * contains a comma. */
+  public static @Nullable Integer findInSet(
+      @Nullable String matchStr,
+      @Nullable String textStr) {
+    if (matchStr == null || textStr == null) {
+      return null;
+    }
+    if (matchStr.contains(COMMA_DELIMITER)) {
+      return 0;
+    }
+    String[] splits = textStr.split(COMMA_DELIMITER);
+    for (int i = 0; i < splits.length; i++) {
+      if (matchStr.equals(splits[i])) {
+        return i + 1;
+      }
+    }
+    return 0;
   }
 
   /** SQL ASCII(string) function. */
@@ -2641,7 +2785,7 @@ public class SqlFunctions {
   }
 
 
-  // LN, LOG, LOG10
+  // LN, LOG, LOG10, LOG2
 
   /** SQL {@code LOG(number, number2)} function applied to double values. */
   public static double log(double d0, double d1) {
@@ -2663,6 +2807,17 @@ public class SqlFunctions {
   /** SQL {@code LOG(number, number2)} function applied to double values. */
   public static double log(BigDecimal d0, BigDecimal d1) {
     return Math.log(d0.doubleValue()) / Math.log(d1.doubleValue());
+  }
+
+  /** SQL {@code LOG2(number)} function applied to double values. */
+  public static @Nullable Double log2(double number) {
+    return (number <= 0) ? null : log(number, 2);
+  }
+
+  /** SQL {@code LOG2(number)} function applied to
+   * BigDecimal values. */
+  public static @Nullable Double log2(BigDecimal number) {
+    return log2(number.doubleValue());
   }
 
   // MOD
@@ -3039,6 +3194,14 @@ public class SqlFunctions {
   /** SQL <code>DEGREES</code> operator applied to double values. */
   public static double degrees(double b0) {
     return Math.toDegrees(b0);
+  }
+
+  /** SQL <code>FACTORIAL</code> operator. */
+  public static @Nullable Long factorial(int b0) {
+    if (b0 < 0 || b0 > 20) {
+      return null;
+    }
+    return CombinatoricsUtils.factorial(b0);
   }
 
   /** SQL <code>IS_INF</code> operator applied to BigDecimal values. */
@@ -3867,7 +4030,7 @@ public class SqlFunctions {
       return sb.toString();
     }
 
-    public String formatTimestamp(DataContext ctx, String fmtString,
+    public String formatTimestamp(String fmtString,
         long timestamp) {
       return internalFormatDatetime(fmtString, internalToTimestamp(timestamp));
     }
@@ -3880,11 +4043,45 @@ public class SqlFunctions {
       return sb.toString().trim();
     }
 
-    public String formatDate(DataContext ctx, String fmtString, int date) {
+    public int toDate(String dateString, String fmtString) {
+      return toInt(
+          new java.sql.Date(internalToDateTime(dateString, fmtString)));
+    }
+
+    public long toTimestamp(String timestampString, String fmtString) {
+      return toLong(
+          new java.sql.Timestamp(internalToDateTime(timestampString, fmtString)));
+    }
+
+    private long internalToDateTime(String dateString, String fmtString) {
+      final ParsePosition pos = new ParsePosition(0);
+
+      sb.setLength(0);
+      withElements(FormatModels.POSTGRESQL, fmtString, elements ->
+          elements.forEach(element -> element.toPattern(sb)));
+      final String dateFormatString = sb.toString().trim();
+
+      final SimpleDateFormat sdf = new SimpleDateFormat(dateFormatString, Locale.ENGLISH);
+      final Date date = sdf.parse(dateString, pos);
+      if (pos.getErrorIndex() >= 0 || pos.getIndex() != dateString.length()) {
+        SQLException e =
+            new SQLException(
+                String.format(Locale.ROOT,
+                    "Invalid format: '%s' for datetime string: '%s'.", fmtString,
+                    dateString));
+        throw Util.toUnchecked(e);
+      }
+
+      @SuppressWarnings("JavaUtilDate")
+      final long millisSinceEpoch = date.getTime();
+      return millisSinceEpoch;
+    }
+
+    public String formatDate(String fmtString, int date) {
       return internalFormatDatetime(fmtString, internalToDate(date));
     }
 
-    public String formatTime(DataContext ctx, String fmtString, int time) {
+    public String formatTime(String fmtString, int time) {
       return internalFormatDatetime(fmtString, internalToTime(time));
     }
   }
@@ -4375,6 +4572,14 @@ public class SqlFunctions {
       } else {
         return length < maxLength ? Spaces.padRight(s, maxLength) : s;
       }
+    }
+  }
+
+  public static @PolyNull ByteString stringToBinary(@PolyNull String s, Charset charset) {
+    if (s == null) {
+      return null;
+    } else {
+      return new ByteString(s.getBytes(charset));
     }
   }
 
@@ -5143,7 +5348,7 @@ public class SqlFunctions {
   }
 
   /** Support the ARRAY_REPEAT function. */
-  public static @Nullable List<Object> repeat(Object element, Object count) {
+  public static @Nullable List<Object> arrayRepeat(Object element, Object count) {
     if (count == null) {
       return null;
     }
@@ -5174,6 +5379,10 @@ public class SqlFunctions {
           + "and not exceeds the allowed limit.");
     }
 
+    if (posInt == -1) {
+      // This means "append to the array"
+      posInt = baseArray.length + 1;
+    }
     boolean usePositivePos = posInt > 0;
 
     if (usePositivePos) {
@@ -5199,7 +5408,10 @@ public class SqlFunctions {
 
       return Arrays.asList(newArray);
     } else {
-      int posIndex = posInt;
+      // 1-based index.
+      // The behavior of this function was changed in Spark 3.4.0.
+      // https://issues.apache.org/jira/browse/SPARK-44840
+      int posIndex = posInt + 1;
 
       boolean newPosExtendsArrayLeft = baseArray.length + posIndex < 0;
 
@@ -5273,6 +5485,22 @@ public class SqlFunctions {
     return list;
   }
 
+  /** Support the EXISTS(list, function1) function. */
+  public static @Nullable Boolean exists(List list, Function1<Object, Boolean> function1) {
+    return nullableExists(list, function1);
+  }
+
+  /** Support the EXISTS(list, predicate1) function. */
+  public static Boolean exists(List list, Predicate1 predicate1) {
+    for (Object element : list) {
+      boolean ret = predicate1.apply(element);
+      if (ret) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Support the MAP_CONCAT function. */
   public static Map mapConcat(Map... maps) {
     final Map result = new LinkedHashMap();
@@ -5299,6 +5527,11 @@ public class SqlFunctions {
     return new ArrayList<>(map.values());
   }
 
+  /** Support the MAP_CONTAINS_KEY function. */
+  public static Boolean mapContainsKey(Map map, Object key) {
+    return map.containsKey(key);
+  }
+
   /** Support the MAP_FROM_ARRAYS function. */
   public static Map mapFromArrays(List keysArray, List valuesArray) {
     if (keysArray.size() != valuesArray.size()) {
@@ -5319,6 +5552,20 @@ public class SqlFunctions {
         return null;
       }
       map.put(structAccess(entry, 0, null), structAccess(entry, 1, null));
+    }
+    return map;
+  }
+
+  /** Support the MAP function.
+   *
+   * <p>odd-indexed elements are keys and even-indexed elements are values.
+   */
+  public static Map map(Object... args) {
+    final Map map = new LinkedHashMap<>();
+    for (int i = 0; i < args.length; i += 2) {
+      Object key = args[i];
+      Object value = args[i + 1];
+      map.put(key, value);
     }
     return map;
   }
@@ -5471,6 +5718,10 @@ public class SqlFunctions {
 
   /** SQL {@code ARRAY_TO_STRING(array, delimiter, nullText)} function. */
   public static String arrayToString(List list, String delimiter, @Nullable String nullText) {
+    // Note that the SQL function ARRAY_TO_STRING that we implement will return
+    // 'NULL' when the nullText argument is NULL. However, that is handled by
+    // the nullPolicy of the RexToLixTranslator. So here a NULL value
+    // for the nullText argument can only come from the above 2-argument version.
     StringBuilder sb = new StringBuilder();
     boolean isFirst = true;
     for (Object item : list) {

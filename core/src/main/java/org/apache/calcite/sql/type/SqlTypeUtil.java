@@ -43,7 +43,6 @@ import org.apache.calcite.util.NumberUtil;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Sets;
 
@@ -61,6 +60,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+
+import static com.google.common.base.Preconditions.checkArgument;
 
 import static org.apache.calcite.rel.type.RelDataTypeImpl.NON_NULLABLE_SUFFIX;
 import static org.apache.calcite.sql.type.NonNullableAccessors.getCharset;
@@ -489,24 +490,6 @@ public abstract class SqlTypeUtil {
       return false;
     }
     return typeName == SqlTypeName.DECIMAL;
-  }
-
-  /** Returns whether a type is DOUBLE. */
-  public static boolean isDouble(RelDataType type) {
-    SqlTypeName typeName = type.getSqlTypeName();
-    if (typeName == null) {
-      return false;
-    }
-    return typeName == SqlTypeName.DOUBLE;
-  }
-
-  /** Returns whether a type is BIGINT. */
-  public static boolean isBigint(RelDataType type) {
-    SqlTypeName typeName = type.getSqlTypeName();
-    if (typeName == null) {
-      return false;
-    }
-    return typeName == SqlTypeName.BIGINT;
   }
 
   /** Returns whether a type is numeric with exact precision. */
@@ -1210,7 +1193,7 @@ public abstract class SqlTypeUtil {
    * two fields. */
   public static RelDataType createMapTypeFromRecord(
       RelDataTypeFactory typeFactory, RelDataType type) {
-    Preconditions.checkArgument(type.getFieldCount() == 2,
+    checkArgument(type.getFieldCount() == 2,
         "MAP requires exactly two fields, got %s; row type %s",
         type.getFieldCount(), type);
     return createMapType(typeFactory, type.getFieldList().get(0).getType(),
@@ -1327,10 +1310,8 @@ public abstract class SqlTypeUtil {
       RelDataTypeFactory factory,
       RelDataType type1,
       RelDataType type2) {
-    Preconditions.checkArgument(isCollection(type1),
-        "Input type1 must be collection type");
-    Preconditions.checkArgument(isCollection(type2),
-        "Input type2 must be collection type");
+    checkArgument(isCollection(type1), "Input type1 must be collection type");
+    checkArgument(isCollection(type2), "Input type2 must be collection type");
 
     return (type1 == type2)
         || (type1.getSqlTypeName() == type2.getSqlTypeName()
@@ -1352,8 +1333,8 @@ public abstract class SqlTypeUtil {
       RelDataTypeFactory factory,
       RelDataType type1,
       RelDataType type2) {
-    Preconditions.checkArgument(isMap(type1), "Input type1 must be map type");
-    Preconditions.checkArgument(isMap(type2), "Input type2 must be map type");
+    checkArgument(isMap(type1), "Input type1 must be map type");
+    checkArgument(isMap(type2), "Input type2 must be map type");
 
     MapSqlType mType1 = (MapSqlType) type1;
     MapSqlType mType2 = (MapSqlType) type2;
@@ -1380,8 +1361,8 @@ public abstract class SqlTypeUtil {
       RelDataType type1,
       RelDataType type2,
       @Nullable SqlNameMatcher nameMatcher) {
-    Preconditions.checkArgument(type1.isStruct(), "Input type1 must be struct type");
-    Preconditions.checkArgument(type2.isStruct(), "Input type2 must be struct type");
+    checkArgument(type1.isStruct(), "Input type1 must be struct type");
+    checkArgument(type2.isStruct(), "Input type2 must be struct type");
 
     if (type1 == type2) {
       return true;
@@ -1486,6 +1467,8 @@ public abstract class SqlTypeUtil {
   /**
    * Returns whether two types are comparable. They need to be scalar types of
    * the same family, or struct types whose fields are pairwise comparable.
+   * Note that types in the CHARACTER family are comparable with many other types
+   * (see {@link #canConvertStringInCompare}).
    *
    * @param type1 First type
    * @param type2 Second type

@@ -271,7 +271,7 @@ public abstract class RelOptUtil {
   }
 
   /**
-   * Returns a set of variables used by a relational expression or its
+   * Returns the set of variables used by a relational expression or its
    * descendants.
    *
    * <p>The set may contain "duplicates" (variables with different ids that,
@@ -284,6 +284,24 @@ public abstract class RelOptUtil {
     CorrelationCollector visitor = new CorrelationCollector();
     rel.accept(visitor);
     return visitor.vuv.variables;
+  }
+
+  /**
+   * Returns the set of variables used by the given list of sub-queries and its descendants.
+   *
+   * @param subQueries The sub-queries containing correlation variables
+   * @return A list of correlation identifiers found within the sub-queries.
+   *          The type of the [CorrelationId] parameter corresponds to
+   *          {@link org.apache.calcite.rex.RexCorrelVariable#id}.
+   */
+  public static Set<CorrelationId> getVariablesUsed(List<RexSubQuery> subQueries) {
+    // Internally this function calls getVariablesUsed on a RelNode to get all the
+    // correlated variables in that RelNode
+    Set<CorrelationId> correlationIds = new HashSet<>();
+    for (RexSubQuery subQ : subQueries) {
+      correlationIds.addAll(getVariablesUsed(subQ.rel));
+    }
+    return correlationIds;
   }
 
   /** Finds which columns of a correlation variable are used within a
@@ -3302,6 +3320,28 @@ public abstract class RelOptUtil {
   public static RelNode createProject(RelNode child, Mappings.TargetMapping mapping,
           RelFactories.ProjectFactory projectFactory) {
     return createProject(projectFactory, child, Mappings.asListNonNull(mapping.inverse()));
+  }
+
+  /** Returns the relational table node for {@code tableName} if it occurs within a
+   * relational expression {@code root} otherwise an empty option is returned. */
+  public static @Nullable RelOptTable findTable(RelNode root, final String tableName) {
+    try {
+      RelShuttle visitor = new RelHomogeneousShuttle() {
+        @Override public RelNode visit(TableScan scan) {
+          final RelOptTable scanTable = scan.getTable();
+          final List<String> qualifiedName = scanTable.getQualifiedName();
+          if (qualifiedName.get(qualifiedName.size() - 1).equals(tableName)) {
+            throw new Util.FoundOne(scanTable);
+          }
+          return super.visit(scan);
+        }
+      };
+      root.accept(visitor);
+      return null;
+    } catch (Util.FoundOne e) {
+      Util.swallow(e, null);
+      return (RelOptTable) e.getNode();
+    }
   }
 
   /** Returns whether relational expression {@code target} occurs within a

@@ -289,6 +289,16 @@ public abstract class AbstractTypeCoercion implements TypeCoercion {
       return false;
     }
 
+    // No casts to binary except from strings
+    if (SqlTypeUtil.isBinary(fromType) && !SqlTypeUtil.isString(toType)) {
+      return false;
+    }
+
+    // No casts from binary except to strings
+    if (SqlTypeUtil.isBinary(toType) && !SqlTypeUtil.isString(fromType)) {
+      return false;
+    }
+
     // Implicit type coercion does not handle nullability.
     if (SqlTypeUtil.equalSansNullability(factory, fromType, toType)) {
       return false;
@@ -466,6 +476,12 @@ public abstract class AbstractTypeCoercion implements TypeCoercion {
     if (SqlTypeUtil.isCharacter(type1) && SqlTypeUtil.isAtomic(type2)) {
       resultType = factory.createSqlType(SqlTypeName.VARCHAR);
     }
+
+    if (null != resultType) {
+      resultType =
+          factory.createTypeWithNullability(resultType, type1.isNullable() || type2.isNullable());
+    }
+
     return resultType;
   }
 
