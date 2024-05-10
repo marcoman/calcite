@@ -1031,3 +1031,10 @@ gradleEnterprise {
 //        isUploadInBackground = System.genenv("CI") == null
     }
 }
+
+tasks.withType<Test>().configureEach {
+    develocity.testRetry {
+        maxRetries.set(3)
+        failOnPassedAfterRetry.set(true)
+    }
+}
