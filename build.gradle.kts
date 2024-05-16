@@ -1013,7 +1013,6 @@ gradleEnterprise {
     server = "https://develocity-field.gradle.com/"
     // allowUntrustedServer = true
 
-
     // see https://docs.gradle.com/enterprise/gradle-plugin/#publishing_every_build
     buildScan {
         // Step 1 asks to always publish build scans.  This value does not change as it allows us to see the results
