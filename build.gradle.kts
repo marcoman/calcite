@@ -1033,7 +1033,7 @@ gradleEnterprise {
 }
 
 tasks.withType<Test>().configureEach {
-    develocity.testRetry {
+    gradleEnterprise.testRetry {
         maxRetries.set(3)
         failOnPassedAfterRetry.set(true)
     }
