@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-node('ubuntu') {
+node {
   def JAVA_JDK_17=tool name: 'jdk_17_latest', type: 'hudson.model.JDK'
   stage('Checkout') {
     if(env.CHANGE_ID) {
