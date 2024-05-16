@@ -16,7 +16,7 @@
  */
 
 node {
-  def JAVA_JDK_17=tool name: 'java-17-coretto', type: 'hudson.model.JDK'
+  def JAVA_JDK_17=tool name: 'java-17-corretto', type: 'hudson.model.JDK'
   stage('Checkout') {
     if(env.CHANGE_ID) {
       // By default checkout on PRs will fetch only that branch and nothing else. However, in order for the Sonar plugin
