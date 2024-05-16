@@ -21,7 +21,7 @@ pluginManagement {
         fun String.v() = extra["$this.version"].toString()
         fun PluginDependenciesSpec.idv(id: String, key: String = id) = id(id) version key.v()
 
-        idv("com.gradle.enterprise")
+        idv("com.gradle.develocity")
         idv("com.gradle.common-custom-user-data-gradle-plugin")
         idv("com.autonomousapps.dependency-analysis")
         idv("org.checkerframework")
@@ -55,7 +55,7 @@ pluginManagement {
 }
 
 plugins {
-    id("com.gradle.enterprise")
+    id("com.gradle.develocity")
     id("com.gradle.common-custom-user-data-gradle-plugin")
     id("com.github.burrunan.s3-build-cache")
 }
@@ -107,7 +107,7 @@ fun property(name: String) =
 val isCiServer = System.getenv().containsKey("CI")
 
 gradleEnterprise {
-    server = "https://ge.apache.org"
+    server = "https://develocity-field.gradle.com"
     allowUntrustedServer = false
 
     buildScan {
@@ -115,10 +115,6 @@ gradleEnterprise {
         isUploadInBackground = !isCiServer
         publishAlways()
         this as BuildScanExtensionWithHiddenFeatures
-        publishIfAuthenticated()
-        obfuscation {
-            ipAddresses { addresses -> addresses.map { "0.0.0.0" } }
-        }
     }
 }
 
