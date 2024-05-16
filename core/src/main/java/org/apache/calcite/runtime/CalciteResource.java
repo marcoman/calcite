@@ -941,6 +941,9 @@ public interface CalciteResource {
   @BaseMessage("Invalid character for cast: {0}")
   ExInst<CalciteException> invalidCharacterForCast(String s);
 
+  @BaseMessage("UNNEST argument must be a collection")
+  ExInst<CalciteException> unnestArgument();
+
   @BaseMessage("More than one value in list: {0}")
   ExInst<CalciteException> moreThanOneValueInList(String list);
 
@@ -989,6 +992,9 @@ public interface CalciteResource {
 
   @BaseMessage("Illegal error behavior ''{0}'' specified in JSON_VALUE function")
   ExInst<CalciteException> illegalErrorBehaviorInJsonQueryFunc(String errorBehavior);
+
+  @BaseMessage("EMPTY_OBJECT is illegal for given return type")
+  ExInst<CalciteException> illegalEmptyObjectInJsonQueryFunc();
 
   @BaseMessage("Null key of JSON object is not allowed")
   ExInst<CalciteException> nullKeyOfJsonObjectNotAllowed();
