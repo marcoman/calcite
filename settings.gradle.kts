@@ -127,7 +127,7 @@ buildCache {
     local {
         isEnabled = !isCiServer
     }
-    remote(develocity.buildCache) {
+    remote(gradleEnterprise.buildCache) {
         isEnabled = true
         isPush = true
     }
