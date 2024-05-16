@@ -47,6 +47,7 @@ import org.apache.calcite.sql.SqlSyntax;
 import org.apache.calcite.sql.dialect.AnsiSqlDialect;
 import org.apache.calcite.sql.fun.LibraryOperator;
 import org.apache.calcite.sql.fun.SqlLibrary;
+import org.apache.calcite.sql.fun.SqlLibraryOperatorTableFactory;
 import org.apache.calcite.sql.fun.SqlLibraryOperators;
 import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
@@ -63,6 +64,7 @@ import org.apache.calcite.sql.type.BasicSqlType;
 import org.apache.calcite.sql.type.SqlOperandTypeChecker;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeUtil;
+import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.apache.calcite.sql.util.SqlString;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
 import org.apache.calcite.sql.validate.SqlNameMatchers;
@@ -523,7 +525,7 @@ public class SqlOperatorTest {
     }
     f.checkString("cast(1.3243232e0 as varchar(4))", "1.32",
         "VARCHAR(4) NOT NULL");
-    f.checkString("cast(1.9e5 as char(4))", "1.9E", "CHAR(4) NOT NULL");
+    f.checkString("cast(1.9e5 as char(4))", "1900", "CHAR(4) NOT NULL");
 
     // string
     f.checkCastToString("'abc'", "CHAR(1)", "a", castType);
@@ -663,6 +665,14 @@ public class SqlOperatorTest {
       f.checkCastFails("'notnumeric'", type, INVALID_CHAR_MESSAGE, true,
           castType);
     });
+  }
+
+  /** Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-6395">
+   * [CALCITE-6395] Significant precision loss when representing REAL literals</a>. */
+  @Test public void floatPrecisionTest() {
+    SqlOperatorFixture f = fixture();
+    f.checkScalar("CAST(CAST('36854775807.0' AS REAL) AS BIGINT)",
+        "36854775808", "BIGINT NOT NULL");
   }
 
   @ParameterizedTest
@@ -3448,6 +3458,8 @@ public class SqlOperatorTest {
     // Per [CALCITE-1632] Return types of datetime + interval
     // make sure that TIME values say in range
     f.checkScalar("time '12:03:01' + interval '1' day",
+        "12:03:01", "TIME(0) NOT NULL");
+    f.checkScalar("time '12:03:01' + interval '25' day",
         "12:03:01", "TIME(0) NOT NULL");
     f.checkScalar("time '12:03:01' + interval '25' hour",
         "13:03:01", "TIME(0) NOT NULL");
@@ -6483,6 +6495,9 @@ public class SqlOperatorTest {
     final SqlOperatorFixture f = fixture();
     f.setFor(SqlStdOperatorTable.POWER, VmName.EXPAND);
     f.checkScalarApprox("power(2,-2)", "DOUBLE NOT NULL", isExactly("0.25"));
+    f.checkScalarApprox("power(cast(2 as decimal), cast(-2 as decimal))",
+        "DOUBLE NOT NULL",
+        isExactly("0.25"));
     f.checkNull("power(cast(null as integer),2)");
     f.checkNull("power(2,cast(null as double))");
 
@@ -6490,6 +6505,31 @@ public class SqlOperatorTest {
     f.checkFails("^pow(2,-2)^",
         "No match found for function signature POW\\(<NUMERIC>, <NUMERIC>\\)",
         false);
+  }
+
+  @Test void testPowerDecimalFunc() {
+    final SqlOperatorFixture f = fixture()
+        .withOperatorTable(
+            SqlOperatorTables.chain(
+            SqlLibraryOperatorTableFactory.INSTANCE.getOperatorTable(
+                ImmutableList.of(SqlLibrary.POSTGRESQL, SqlLibrary.ALL),
+                false),
+            SqlStdOperatorTable.instance()))
+        .setFor(SqlLibraryOperators.POWER_PG);
+    f.checkScalarApprox("power(cast(2 as decimal), cast(-2 as decimal))",
+        "DECIMAL(17, 0) NOT NULL",
+        isExactly("0.25"));
+    f.checkScalarApprox("power(cast(2 as decimal), -2)",
+        "DECIMAL(17, 0) NOT NULL",
+        isExactly("0.25"));
+    f.checkScalarApprox("power(2, cast(-2 as decimal))",
+        "DECIMAL(17, 0) NOT NULL",
+        isExactly("0.25"));
+    f.checkScalarApprox("power(2, -2)", "DOUBLE NOT NULL", isExactly("0.25"));
+    f.checkScalarApprox("power(CAST(0.25 AS DOUBLE), CAST(0.5 AS DOUBLE))",
+        "DOUBLE NOT NULL", isExactly("0.5"));
+    f.checkNull("power(null, -2)");
+    f.checkNull("power(2, null)");
   }
 
   @Test void testSqrtFunc() {
