@@ -232,6 +232,7 @@ import static org.apache.calcite.sql.fun.SqlLibraryOperators.PARSE_TIME;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.PARSE_TIMESTAMP;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.PARSE_URL;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.POW;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.POWER_PG;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.RANDOM;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.REGEXP;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.REGEXP_CONTAINS;
@@ -644,6 +645,7 @@ public class RexImpTable {
       defineMethod(MOD, BuiltInMethod.MOD.method, NullPolicy.STRICT);
       defineMethod(EXP, BuiltInMethod.EXP.method, NullPolicy.STRICT);
       defineMethod(POWER, BuiltInMethod.POWER.method, NullPolicy.STRICT);
+      defineMethod(POWER_PG, BuiltInMethod.POWER_PG.method, NullPolicy.STRICT);
       defineMethod(ABS, BuiltInMethod.ABS.method, NullPolicy.STRICT);
       defineMethod(LOG2, BuiltInMethod.LOG2.method, NullPolicy.STRICT);
 
@@ -945,7 +947,7 @@ public class RexImpTable {
           BuiltInMethod.JSON_EXISTS3.method);
       map.put(JSON_VALUE,
           new JsonValueImplementor(BuiltInMethod.JSON_VALUE.method));
-      defineReflective(JSON_QUERY, BuiltInMethod.JSON_QUERY.method);
+      map.put(JSON_QUERY, new JsonQueryImplementor(BuiltInMethod.JSON_QUERY.method));
       defineMethod(JSON_TYPE, BuiltInMethod.JSON_TYPE.method, NullPolicy.ARG0);
       defineMethod(JSON_DEPTH, BuiltInMethod.JSON_DEPTH.method, NullPolicy.ARG0);
       defineMethod(JSON_INSERT, BuiltInMethod.JSON_INSERT.method, NullPolicy.ARG0);
@@ -2903,6 +2905,34 @@ public class RexImpTable {
     }
   }
 
+  /**
+   * Implementor for JSON_QUERY function. Passes the jsonize flag depending on the output type.
+   */
+  private static class JsonQueryImplementor extends MethodImplementor {
+    JsonQueryImplementor(Method method) {
+      super(method, NullPolicy.ARG0, false);
+    }
+
+    @Override Expression implementSafe(RexToLixTranslator translator,
+        RexCall call, List<Expression> argValueList) {
+      final List<Expression> newOperands = new ArrayList<>(argValueList);
+
+      final Expression jsonize;
+      if (SqlTypeUtil.inCharFamily(call.getType())) {
+        jsonize = TRUE_EXPR;
+      } else {
+        jsonize = FALSE_EXPR;
+      }
+      newOperands.add(jsonize);
+
+      List<Expression> argValueList0 =
+          EnumUtils.fromInternal(method.getParameterTypes(), newOperands);
+      final Expression target =
+          Expressions.new_(method.getDeclaringClass());
+      return Expressions.call(target, method, argValueList0);
+    }
+  }
+
   /** Implementor for binary operators. */
   private static class BinaryImplementor extends AbstractRexCallImplementor {
     /** Types that can be arguments to comparison operators such as
@@ -3655,6 +3685,7 @@ public class RexImpTable {
         }
         break;
       case TIME:
+        trop1 = normalize(typeName, trop1);
         trop1 = Expressions.convert_(trop1, int.class);
         break;
       default:

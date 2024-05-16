@@ -3110,6 +3110,15 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
   }
 
   /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6382">[CALCITE-6382]
+   * Type inference for SqlLeadLagAggFunction is incorrect</a>. */
+  @Test void testWindowLagInference() {
+    sql("select lead(sal, 4, 0.5) over (w)\n"
+        + " from emp window w as (order by empno)")
+        .type("RecordType(DECIMAL(11, 1) NOT NULL EXPR$0) NOT NULL");
+  }
+
+  /** Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-883">[CALCITE-883]
    * Give error if the aggregate function don't support null treatment</a>. */
   @Test void testWindowFunctionsIgnoreNulls() {
@@ -11478,6 +11487,14 @@ public class SqlValidatorTest extends SqlValidatorTestCase {
     expr("json_query('{\"foo\":\"bar\"}', 'strict $' EMPTY OBJECT ON EMPTY "
         + "EMPTY ARRAY ON ERROR EMPTY ARRAY ON EMPTY NULL ON ERROR)")
         .columnType("VARCHAR(2000)");
+
+    expr("json_query('{\"foo\":[100, null, 200]}', 'lax $.foo'"
+        + "returning integer array)")
+        .columnType("INTEGER ARRAY");
+
+    expr("json_query('{\"foo\":[[100, null, 200]]}', 'lax $.foo'"
+        + "returning integer array array)")
+        .columnType("INTEGER ARRAY ARRAY");
   }
 
   @Test void testJsonArray() {

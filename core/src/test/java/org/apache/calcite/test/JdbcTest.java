@@ -4631,9 +4631,6 @@ public class JdbcTest {
             "RN=8; L=2");
   }
 
-  /**
-   * Tests expression in offset value of LAG function.
-   */
   @Disabled("Have no idea how to validate that expression is constant")
   @Test void testNtileConstantArgs() {
     CalciteAssert.that()
@@ -4652,9 +4649,6 @@ public class JdbcTest {
             "RN=8; L=2");
   }
 
-  /**
-   * Tests expression in offset value of LAG function.
-   */
   @Test void testNtileNegativeArg() {
     CalciteAssert.that()
         .query("select rn, ntile(-1) over (order by rn) l\n"
@@ -4663,9 +4657,6 @@ public class JdbcTest {
             "Argument to function 'NTILE' must be a positive integer literal");
   }
 
-  /**
-   * Tests expression in offset value of LAG function.
-   */
   @Test void testNtileDecimalArg() {
     CalciteAssert.that()
         .query("select rn, ntile(3.141592653) over (order by rn) l\n"
@@ -8054,6 +8045,71 @@ public class JdbcTest {
             + "FROM (VALUES ('{\"a\": [10, true],\"b\": \"[10, true]\"}')) AS t(v)\n"
             + "limit 10")
         .returns("C1=OBJECT; C2=ARRAY; C3=INTEGER; C4=BOOLEAN\n");
+  }
+
+  @Test void testJsonQuery() {
+    CalciteAssert.that()
+        .query("SELECT JSON_QUERY(v, '$.a') AS c1\n"
+            + ",JSON_QUERY(v, '$.a' RETURNING INTEGER ARRAY) AS c2\n"
+            + ",JSON_QUERY(v, '$.b' RETURNING INTEGER ARRAY EMPTY ARRAY ON ERROR) AS c3\n"
+            + ",JSON_QUERY(v, '$.b' RETURNING VARCHAR ARRAY WITH ARRAY WRAPPER) AS c4\n"
+            + "FROM (VALUES ('{\"a\": [1, 2],\"b\": \"[1, 2]\"}')) AS t(v)\n"
+            + "LIMIT 10")
+        .returns("C1=[1,2]; C2=[1, 2]; C3=[]; C4=[[1, 2]]\n");
+  }
+
+  @Test void testJsonValueError() {
+    java.sql.SQLException t =
+        assertThrows(
+            java.sql.SQLException.class,
+            () -> CalciteAssert.that()
+                .query("SELECT JSON_VALUE(v, 'lax $.a' RETURNING INTEGER) AS c1\n"
+                    + "FROM (VALUES ('{\"a\": \"abc\"}')) AS t(v)\n"
+                    + "LIMIT 10")
+                .returns(""));
+
+    assertThat(
+        t.getMessage(), containsString("java.lang.String cannot be cast to"));
+  }
+
+  @Test void testJsonQueryError() {
+    java.sql.SQLException t =
+        assertThrows(
+            java.sql.SQLException.class,
+            () -> CalciteAssert.that()
+                .query("SELECT JSON_QUERY(v, '$.a' RETURNING VARCHAR ARRAY"
+                    + " EMPTY OBJECT ON ERROR) AS c1\n"
+                    + "FROM (VALUES ('{\"a\": \"hi\"}')) AS t(v)\n"
+                    + "LIMIT 10")
+                .returns(""));
+
+    assertThat(
+        t.getMessage(), containsString("EMPTY_OBJECT is illegal for given return type"));
+
+    t =
+        assertThrows(
+            java.sql.SQLException.class,
+            () -> CalciteAssert.that()
+                .query("SELECT JSON_QUERY(v, 'lax $.a' RETURNING VARCHAR ARRAY"
+                    + " EMPTY OBJECT ON EMPTY) AS c1\n"
+                    + "FROM (VALUES ('{\"a\": null}')) AS t(v)\n"
+                    + "LIMIT 10")
+                .returns(""));
+
+    assertThat(
+        t.getMessage(), containsString("EMPTY_OBJECT is illegal for given return type"));
+
+    t =
+        assertThrows(
+            java.sql.SQLException.class,
+            () -> CalciteAssert.that()
+                .query("SELECT JSON_QUERY(v, 'lax $.a' RETURNING INTEGER) AS c1\n"
+                    + "FROM (VALUES ('{\"a\": [\"a\", \"b\"]}')) AS t(v)\n"
+                    + "LIMIT 10")
+                .returns(""));
+
+    assertThat(
+        t.getMessage(), containsString("java.util.ArrayList cannot be cast to"));
   }
 
   @Test void testJsonDepth() {
