@@ -127,14 +127,9 @@ buildCache {
     local {
         isEnabled = !isCiServer
     }
-    if (property("s3.build.cache")?.ifBlank { "true" }?.toBoolean() == true) {
-        val pushAllowed = property("s3.build.cache.push")?.ifBlank { "true" }?.toBoolean() ?: true
-        remote<com.github.burrunan.s3cache.AwsS3BuildCache> {
-            region = "us-east-2"
-            bucket = "calcite-gradle-cache"
-            endpoint = "s3.us-east-2.wasabisys.com"
-            isPush = isCiServer && pushAllowed && !awsAccessKeyId.isNullOrBlank()
-        }
+    remote(develocity.buildCache) {
+        isEnabled = true
+        isPush = true
     }
 }
 
