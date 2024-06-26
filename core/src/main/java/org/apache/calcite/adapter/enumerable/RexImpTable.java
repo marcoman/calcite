@@ -44,6 +44,7 @@ import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexPatternFieldRef;
+import org.apache.calcite.rex.RexWindowExclusion;
 import org.apache.calcite.runtime.FlatLists;
 import org.apache.calcite.runtime.SqlFunctions;
 import org.apache.calcite.schema.FunctionContext;
@@ -52,6 +53,7 @@ import org.apache.calcite.schema.ImplementableFunction;
 import org.apache.calcite.schema.impl.AggregateFunctionImpl;
 import org.apache.calcite.sql.SqlAggFunction;
 import org.apache.calcite.sql.SqlBinaryOperator;
+import org.apache.calcite.sql.SqlIntervalQualifier;
 import org.apache.calcite.sql.SqlJsonConstructorNullClause;
 import org.apache.calcite.sql.SqlJsonEmptyOrError;
 import org.apache.calcite.sql.SqlJsonValueEmptyOrErrorBehavior;
@@ -147,6 +149,8 @@ import static org.apache.calcite.sql.fun.SqlLibraryOperators.BITAND_AGG;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.BITOR_AGG;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.BIT_GET;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.BIT_LENGTH;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.BOOLAND_AGG;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.BOOLOR_AGG;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.BOOL_AND;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.BOOL_OR;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.CEIL_BIG_QUERY;
@@ -279,6 +283,7 @@ import static org.apache.calcite.sql.fun.SqlLibraryOperators.TIME_TRUNC;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.TO_BASE32;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.TO_BASE64;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.TO_CHAR;
+import static org.apache.calcite.sql.fun.SqlLibraryOperators.TO_CHAR_PG;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.TO_CODE_POINTS;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.TO_DATE;
 import static org.apache.calcite.sql.fun.SqlLibraryOperators.TO_HEX;
@@ -787,6 +792,7 @@ public class RexImpTable {
 
       // Datetime formatting methods
       defineReflective(TO_CHAR, BuiltInMethod.TO_CHAR.method);
+      defineReflective(TO_CHAR_PG, BuiltInMethod.TO_CHAR_PG.method);
       defineReflective(TO_DATE, BuiltInMethod.TO_DATE.method);
       defineReflective(TO_TIMESTAMP, BuiltInMethod.TO_TIMESTAMP.method);
       final FormatDatetimeImplementor datetimeFormatImpl =
@@ -1055,6 +1061,8 @@ public class RexImpTable {
       aggMap.put(EVERY, minMax);
       aggMap.put(BOOL_AND, minMax);
       aggMap.put(BOOL_OR, minMax);
+      aggMap.put(BOOLAND_AGG, minMax);
+      aggMap.put(BOOLOR_AGG, minMax);
       aggMap.put(LOGICAL_AND, minMax);
       aggMap.put(LOGICAL_OR, minMax);
       final Supplier<BitOpImplementor> bitop =
@@ -1434,7 +1442,7 @@ public class RexImpTable {
           break;
         }
       }
-      if (!hasNullable) {
+      if (!hasNullable && info.getExclude() == RexWindowExclusion.EXCLUDE_NO_OTHER) {
         justFrameRowCount = true;
         return Collections.emptyList();
       }
@@ -3104,8 +3112,18 @@ public class RexImpTable {
 
     @Override Expression implementSafe(final RexToLixTranslator translator,
         final RexCall call, final List<Expression> argValueList) {
-      final TimeUnitRange timeUnitRange =
-          (TimeUnitRange) translator.getLiteralValue(argValueList.get(0));
+      // May need to convert the first argument from a String to a TimeUnitRange
+      final Object timeUnitRangeObj = translator.getLiteralValue(argValueList.get(0));
+      final TimeUnitRange timeUnitRange;
+      if (timeUnitRangeObj instanceof String) {
+        timeUnitRange =
+            TimeUnitRange.of(
+                SqlIntervalQualifier.stringToDatePartTimeUnit((String) timeUnitRangeObj),
+                null);
+      } else {
+        timeUnitRange = (TimeUnitRange) timeUnitRangeObj;
+      }
+
       final TimeUnit unit = requireNonNull(timeUnitRange, "timeUnitRange").startUnit;
       Expression operand = argValueList.get(1);
       boolean isIntervalType = SqlTypeUtil.isInterval(call.operands.get(1).getType());

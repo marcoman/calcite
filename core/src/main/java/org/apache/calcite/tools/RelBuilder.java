@@ -84,6 +84,7 @@ import org.apache.calcite.rex.RexSubQuery;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexWindowBound;
 import org.apache.calcite.rex.RexWindowBounds;
+import org.apache.calcite.rex.RexWindowExclusion;
 import org.apache.calcite.runtime.Hook;
 import org.apache.calcite.runtime.ImmutablePairList;
 import org.apache.calcite.runtime.PairList;
@@ -2502,9 +2503,12 @@ public class RelBuilder {
           newProjects.add(project.getProjects().get(i));
           builder.add(project.getRowType().getFieldList().get(i));
         }
+
+        // This currently does not apply mappings correctly to the RelCollation due to
+        // https://issues.apache.org/jira/browse/CALCITE-6391
         r =
-            project.copy(cluster.traitSet(), project.getInput(), newProjects,
-                builder.build());
+            project.copy(project.getTraitSet().apply(targetMapping), project.getInput(),
+                newProjects, builder.build());
       } else {
         groupSetAfterPruning = groupSet;
         groupSetsAfterPruning = groupSets;
@@ -4521,6 +4525,9 @@ public class RelBuilder {
       return rangeBetween(RexWindowBounds.UNBOUNDED_PRECEDING, upper);
     }
 
+    /** Sets the frame to EXCLUDE rows; default to EXCLUDE_NO_OTHER. */
+    OverCall exclude(RexWindowExclusion exclude);
+
     /** Sets a RANGE window with lower and upper bounds,
      * equivalent to SQL {@code RANGE BETWEEN lower ROW AND upper}. */
     OverCall rangeBetween(RexWindowBound lower, RexWindowBound upper);
@@ -4550,6 +4557,7 @@ public class RelBuilder {
     private final boolean rows;
     private final RexWindowBound lowerBound;
     private final RexWindowBound upperBound;
+    private final RexWindowExclusion exclude;
     private final ImmutableList<RexNode> partitionKeys;
     private final ImmutableList<RexFieldCollation> sortKeys;
     private final SqlAggFunction op;
@@ -4560,7 +4568,7 @@ public class RelBuilder {
         @Nullable String alias, ImmutableList<RexNode> partitionKeys,
         ImmutableList<RexFieldCollation> sortKeys, boolean rows,
         RexWindowBound lowerBound, RexWindowBound upperBound,
-        boolean nullWhenCountZero, boolean allowPartial) {
+        boolean nullWhenCountZero, boolean allowPartial, RexWindowExclusion exclude) {
       this.op = op;
       this.distinct = distinct;
       this.operands = operands;
@@ -4573,6 +4581,7 @@ public class RelBuilder {
       this.rows = rows;
       this.lowerBound = lowerBound;
       this.upperBound = upperBound;
+      this.exclude = exclude;
     }
 
     /** Creates an OverCallImpl with default settings. */
@@ -4581,7 +4590,7 @@ public class RelBuilder {
         @Nullable String alias) {
       this(op, distinct, operands, ignoreNulls, alias, ImmutableList.of(),
           ImmutableList.of(), true, RexWindowBounds.UNBOUNDED_PRECEDING,
-          RexWindowBounds.UNBOUNDED_FOLLOWING, false, true);
+          RexWindowBounds.UNBOUNDED_FOLLOWING, false, true, RexWindowExclusion.EXCLUDE_NO_OTHER);
     }
 
     @Override public OverCall partitionBy(
@@ -4596,13 +4605,13 @@ public class RelBuilder {
     private OverCall partitionBy_(ImmutableList<RexNode> partitionKeys) {
       return new OverCallImpl(op, distinct, operands, ignoreNulls, alias,
           partitionKeys, sortKeys, rows, lowerBound, upperBound,
-          nullWhenCountZero, allowPartial);
+          nullWhenCountZero, allowPartial, exclude);
     }
 
     private OverCall orderBy_(ImmutableList<RexFieldCollation> sortKeys) {
       return new OverCallImpl(op, distinct, operands, ignoreNulls, alias,
           partitionKeys, sortKeys, rows, lowerBound, upperBound,
-          nullWhenCountZero, allowPartial);
+          nullWhenCountZero, allowPartial, exclude);
     }
 
     @Override public OverCall orderBy(Iterable<? extends RexNode> sortKeys) {
@@ -4623,32 +4632,38 @@ public class RelBuilder {
         RexWindowBound upperBound) {
       return new OverCallImpl(op, distinct, operands, ignoreNulls, alias,
           partitionKeys, sortKeys, true, lowerBound, upperBound,
-          nullWhenCountZero, allowPartial);
+          nullWhenCountZero, allowPartial, exclude);
     }
 
     @Override public OverCall rangeBetween(RexWindowBound lowerBound,
         RexWindowBound upperBound) {
       return new OverCallImpl(op, distinct, operands, ignoreNulls, alias,
           partitionKeys, sortKeys, false, lowerBound, upperBound,
-          nullWhenCountZero, allowPartial);
+          nullWhenCountZero, allowPartial, exclude);
+    }
+
+    @Override public OverCall exclude(RexWindowExclusion exclude) {
+      return new OverCallImpl(op, distinct, operands, ignoreNulls, alias,
+          partitionKeys, sortKeys, rows, lowerBound, upperBound,
+          nullWhenCountZero, allowPartial, exclude);
     }
 
     @Override public OverCall allowPartial(boolean allowPartial) {
       return new OverCallImpl(op, distinct, operands, ignoreNulls, alias,
           partitionKeys, sortKeys, rows, lowerBound, upperBound,
-          nullWhenCountZero, allowPartial);
+          nullWhenCountZero, allowPartial, exclude);
     }
 
     @Override public OverCall nullWhenCountZero(boolean nullWhenCountZero) {
       return new OverCallImpl(op, distinct, operands, ignoreNulls, alias,
           partitionKeys, sortKeys, rows, lowerBound, upperBound,
-          nullWhenCountZero, allowPartial);
+          nullWhenCountZero, allowPartial, exclude);
     }
 
     @Override public RexNode as(String alias) {
       return new OverCallImpl(op, distinct, operands, ignoreNulls, alias,
           partitionKeys, sortKeys, rows, lowerBound, upperBound,
-          nullWhenCountZero, allowPartial).toRex();
+          nullWhenCountZero, allowPartial, exclude).toRex();
     }
 
     @Override public RexNode toRex() {
@@ -4662,7 +4677,7 @@ public class RelBuilder {
       final RelDataType type = op.inferReturnType(bind);
       final RexNode over = getRexBuilder()
           .makeOver(type, op, operands, partitionKeys, sortKeys,
-              lowerBound, upperBound, rows, allowPartial, nullWhenCountZero,
+              lowerBound, upperBound, exclude, rows, allowPartial, nullWhenCountZero,
               distinct, ignoreNulls);
       return aliasMaybe(over, alias);
     }

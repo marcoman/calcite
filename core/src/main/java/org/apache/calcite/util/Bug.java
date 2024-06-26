@@ -215,6 +215,32 @@ public abstract class Bug {
    * Fix failing quidem tests for FORMAT in CAST</a> is fixed. */
   public static final boolean CALCITE_6375_FIXED = false;
 
+  /** Whether
+   * <a href="https://issues.apache.org/jira/browse/CALCITE/issues/CALCITE-6391">
+   * [CALCITE-6391] Apply mapping to RelCompositeTrait does not apply it to wrapped traits</a>
+   * is fixed. */
+  public static final boolean CALCITE_6391_FIXED = false;
+
+  /** Whether
+   * <a href="https://issues.apache.org/jira/browse/CALCITE/issues/CALCITE-6293">
+   * [CALCITE-6293] Support OR condition in Arrow adapter</a> is fixed. */
+  public static final boolean CALCITE_6293_FIXED = false;
+
+  /** Whether
+   * <a href="https://issues.apache.org/jira/browse/CALCITE/issues/CALCITE-6294">
+   * [CALCITE-6294] Support IN filter in Arrow adapter</a> is fixed. */
+  public static final boolean CALCITE_6294_FIXED = false;
+
+  /** Whether
+   * <a href="https://issues.apache.org/jira/browse/CALCITE/issues/CALCITE-6295">
+   * [CALCITE-6295] Support IS NOT NULL in Arrow adapter</a> is fixed. */
+  public static final boolean CALCITE_6295_FIXED = false;
+
+  /** Whether
+   * <a href="https://issues.apache.org/jira/browse/CALCITE/issues/CALCITE-6296">
+   * [CALCITE-6296] Support IS NULL in Arrow adapter</a> is fixed. */
+  public static final boolean CALCITE_6296_FIXED = false;
+
   /**
    * Use this to flag temporary code.
    */

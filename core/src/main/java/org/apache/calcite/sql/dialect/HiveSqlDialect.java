@@ -33,12 +33,15 @@ import org.apache.calcite.util.RelToSqlConverterUtil;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+import static org.apache.calcite.util.RelToSqlConverterUtil.unparseSparkArrayAndMap;
+
 /**
  * A <code>SqlDialect</code> implementation for the Apache Hive database.
  */
 public class HiveSqlDialect extends SqlDialect {
   public static final SqlDialect.Context DEFAULT_CONTEXT = SqlDialect.EMPTY_CONTEXT
       .withDatabaseProduct(SqlDialect.DatabaseProduct.HIVE)
+      .withIdentifierQuoteString("`")
       .withNullCollation(NullCollation.LOW);
 
   public static final SqlDialect DEFAULT = new HiveSqlDialect(DEFAULT_CONTEXT);
@@ -80,6 +83,10 @@ public class HiveSqlDialect extends SqlDialect {
   @Override public void unparseCall(final SqlWriter writer, final SqlCall call,
       final int leftPrec, final int rightPrec) {
     switch (call.getKind()) {
+    case ARRAY_VALUE_CONSTRUCTOR:
+    case MAP_VALUE_CONSTRUCTOR:
+      unparseSparkArrayAndMap(writer, call, leftPrec, rightPrec);
+      break;
     case POSITION:
       final SqlWriter.Frame frame = writer.startFunCall("INSTR");
       writer.sep(",");
@@ -115,6 +122,10 @@ public class HiveSqlDialect extends SqlDialect {
     return true;
   }
 
+  @Override public boolean supportsTimestampPrecision() {
+    return false;
+  }
+
   @Override public boolean supportsApproxCountDistinct() {
     return true;
   }
@@ -131,6 +142,13 @@ public class HiveSqlDialect extends SqlDialect {
             new SqlAlienSystemTypeNameSpec("INT", type.getSqlTypeName(),
                 SqlParserPos.ZERO);
         return new SqlDataTypeSpec(typeNameSpec, SqlParserPos.ZERO);
+      case VARCHAR:
+        if (type.getPrecision() == RelDataType.PRECISION_NOT_SPECIFIED) {
+          return new SqlDataTypeSpec(
+              new SqlAlienSystemTypeNameSpec("STRING", type.getSqlTypeName(),
+                  SqlParserPos.ZERO), SqlParserPos.ZERO);
+        }
+        break;
       default:
         break;
       }

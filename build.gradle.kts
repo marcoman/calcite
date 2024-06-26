@@ -25,12 +25,12 @@ import com.github.vlsi.gradle.properties.dsl.props
 import com.github.vlsi.gradle.release.RepositoryType
 import de.thetaphi.forbiddenapis.gradle.CheckForbiddenApis
 import de.thetaphi.forbiddenapis.gradle.CheckForbiddenApisExtension
-import java.net.URI
 import net.ltgt.gradle.errorprone.errorprone
 import org.apache.calcite.buildtools.buildext.dsl.ParenthesisBalancer
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
+    base
     // java-base is needed for platform(...) resolution,
     // see https://github.com/gradle/gradle/issues/14822
     `java-base`
@@ -70,11 +70,6 @@ repositories {
 
 tasks.wrapper {
     distributionType = Wrapper.DistributionType.BIN
-    doLast {
-        val sha256Uri = URI("$distributionUrl.sha256")
-        val sha256Sum = String(sha256Uri.toURL().readBytes())
-        propertiesFile.appendText("distributionSha256Sum=${sha256Sum}\n")
-    }
 }
 
 fun reportsForHumans() = !(System.getenv()["CI"]?.toBoolean() ?: false)
@@ -195,7 +190,7 @@ val javadocAggregate by tasks.registering(Javadoc::class) {
 
     classpath = files(sourceSets.map { set -> set.map { it.output + it.compileClasspath } })
     setSource(sourceSets.map { set -> set.map { it.allJava } })
-    setDestinationDir(file("$buildDir/docs/javadocAggregate"))
+    setDestinationDir(file(layout.buildDirectory.get().file("docs/javadocAggregate")))
 }
 
 /** Similar to {@link #javadocAggregate} but includes tests.
@@ -210,7 +205,7 @@ val javadocAggregateIncludingTests by tasks.registering(Javadoc::class) {
 
     classpath = files(sourceSets.map { set -> set.map { it.output + it.compileClasspath } })
     setSource(sourceSets.map { set -> set.map { it.allJava } })
-    setDestinationDir(file("$buildDir/docs/javadocAggregateIncludingTests"))
+    setDestinationDir(file(layout.buildDirectory.get().file("docs/javadocAggregateIncludingTests")))
 }
 
 val adaptersForSqlline = listOf(
@@ -234,6 +229,21 @@ val sqllineClasspath by configurations.creating {
     }
 }
 
+@CacheableRule
+abstract class AddDependenciesRule @Inject constructor(val dependencies: List<String>) : ComponentMetadataRule {
+    override fun execute(context: ComponentMetadataContext) {
+        listOf("compile", "runtime").forEach { base ->
+            context.details.withVariant(base) {
+                withDependencies {
+                    dependencies.forEach {
+                        add(it)
+                    }
+                }
+            }
+        }
+    }
+}
+
 dependencies {
     sqllineClasspath(platform(project(":bom")))
     sqllineClasspath(project(":testkit"))
@@ -241,12 +251,21 @@ dependencies {
     for (p in adaptersForSqlline) {
         sqllineClasspath(project(p))
     }
+
+    components {
+        for (m in dataSetsForSqlline) {
+            withModule<AddDependenciesRule>(m)
+        }
+    }
+
     for (m in dataSetsForSqlline) {
-        sqllineClasspath(module(m))
+        sqllineClasspath(m)
     }
     if (enableJacoco) {
         for (p in subprojects) {
-            jacocoAggregation(p)
+            if (p.name != "bom") {
+                jacocoAggregation(p)
+            }
         }
     }
 }
@@ -320,7 +339,7 @@ fun com.github.autostyle.gradle.BaseFormatExtension.license() {
 sonarqube {
     properties {
         property("sonar.test.inclusions", "**/*Test*/**")
-        property("sonar.coverage.jacoco.xmlReportPaths", "$buildDir/reports/jacoco/jacocoAggregateTestReport/jacocoAggregateTestReport.xml")
+        property("sonar.coverage.jacoco.xmlReportPaths", layout.buildDirectory.get().file("reports/jacoco/jacocoAggregateTestReport/jacocoAggregateTestReport.xml"))
     }
 }
 
@@ -451,7 +470,7 @@ allprojects {
             // Unfortunately, Gradle passes only config_loc variable by default, so we make
             // all the paths relative to config_loc
             configProperties!!["cache_file"] =
-                buildDir.resolve("checkstyle/cacheFile").relativeTo(configLoc)
+                layout.buildDirectory.asFile.get().resolve("checkstyle/cacheFile").relativeTo(configLoc)
         }
         // afterEvaluate is to support late sourceSet addition (e.g. jmh sourceset)
         afterEvaluate {
@@ -514,7 +533,7 @@ allprojects {
     }
 
     plugins.withType<JavaPlugin> {
-        configure<JavaPluginConvention> {
+        configure<JavaPluginExtension> {
             sourceCompatibility = JavaVersion.VERSION_1_8
             targetCompatibility = JavaVersion.VERSION_1_8
         }
@@ -794,6 +813,9 @@ allprojects {
                 inputs.property("java.vm.version", System.getProperty("java.vm.version"))
                 options.encoding = "UTF-8"
                 options.compilerArgs.add("-Xlint:deprecation")
+                // JDK 1.8 is deprecated https://bugs.openjdk.org/browse/JDK-8173605
+                // and now it requires -Xlint:-options to mute warnings about its deprecation
+                options.compilerArgs.add("-Xlint:-options")
                 if (werror) {
                     options.compilerArgs.add("-Werror")
                 }
@@ -802,7 +824,7 @@ allprojects {
                 }
             }
             configureEach<Test> {
-                outputs.cacheIf("test results depend on the database configuration, so we souldn't cache it") {
+                outputs.cacheIf("test results depend on the database configuration, so we shouldn't cache it") {
                     false
                 }
                 useJUnitPlatform {
@@ -852,8 +874,8 @@ allprojects {
                     description = "$description (skipped by default, to enable it add -Dspotbugs)"
                 }
                 reports {
-                    html.isEnabled = reportsForHumans()
-                    xml.isEnabled = !reportsForHumans()
+                    html.required.set(reportsForHumans())
+                    xml.required.set(!reportsForHumans())
                 }
                 enabled = enableSpotBugs
             }
@@ -910,8 +932,9 @@ allprojects {
             archives(sourcesJar)
         }
 
-        val archivesBaseName = "calcite-$name"
-        setProperty("archivesBaseName", archivesBaseName)
+        base {
+            archivesName.set("calcite-$name")
+        }
 
         configure<PublishingExtension> {
             if (project.path == ":") {
@@ -924,7 +947,7 @@ allprojects {
             }
             publications {
                 create<MavenPublication>(project.name) {
-                    artifactId = archivesBaseName
+                    artifactId = base.archivesName.get()
                     version = rootProject.version.toString()
                     description = project.description
                     from(components["java"])
@@ -966,10 +989,14 @@ allprojects {
                             // Re-format the XML
                             asNode()
                         }
+
+                        fun capitalize(input: String): String {
+                            return input.replaceFirstChar { it.uppercaseChar() }
+                        }
                         name.set(
-                            (project.findProperty("artifact.name") as? String) ?: "Calcite ${project.name.capitalize()}"
+                            (project.findProperty("artifact.name") as? String) ?: "Calcite ${capitalize(project.name)}"
                         )
-                        description.set(project.description ?: "Calcite ${project.name.capitalize()}")
+                        description.set(project.description ?: "Calcite ${capitalize(project.name)}")
                         inceptionYear.set("2012")
                         url.set("https://calcite.apache.org")
                         licenses {

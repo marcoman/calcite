@@ -331,10 +331,17 @@ windowSpec:
       [ ORDER BY orderItem [, orderItem ]* ]
       [ PARTITION BY expression [, expression ]* ]
       [
-          RANGE numericOrIntervalExpression { PRECEDING | FOLLOWING }
-      |   ROWS numericExpression { PRECEDING | FOLLOWING }
+          RANGE numericOrIntervalExpression { PRECEDING | FOLLOWING [exclude]}
+      |   ROWS numericExpression { PRECEDING | FOLLOWING [exclude] }
       ]
       ')'
+
+exclude:
+      EXCLUDE NO OTHERS
+  |   EXCLUDE CURRENT ROW
+  |   EXCLUDE GROUP
+  |   EXCLUDE TIES
+
 {% endhighlight %}
 
 In *insert*, if the INSERT or UPSERT statement does not specify a
@@ -1198,12 +1205,12 @@ Note:
 
 ### Non-scalar types
 
-| Type     | Description                | Example literals
+| Type     | Description                | Example type
 |:-------- |:---------------------------|:---------------
 | ANY      | The union of all types |
 | UNKNOWN  | A value of an unknown type; used as a placeholder |
 | ROW      | Row with 1 or more columns | Example: row(f0 int null, f1 varchar)
-| MAP      | Collection of keys mapped to values | Example: (int, varchar) map
+| MAP      | Collection of keys mapped to values | Example: map &lt; int, varchar &gt;
 | MULTISET | Unordered collection that may contain duplicates | Example: int multiset
 | ARRAY    | Ordered, contiguous collection that may contain duplicates | Example: varchar(10) array
 | CURSOR   | Cursor over the result of executing a query |
@@ -1493,7 +1500,11 @@ type:
 typeName:
       sqlTypeName
   |   rowTypeName
+  |   mapTypeName
   |   compoundIdentifier
+
+mapTypeName:
+  MAP '<' type ',' type '>'
 
 sqlTypeName:
       char [ precision ] [ charSet ]
@@ -1958,15 +1969,19 @@ windowedAggregateCall:
       agg '(' [ ALL | DISTINCT ] value [, value ]* ')'
       [ RESPECT NULLS | IGNORE NULLS ]
       [ WITHIN GROUP '(' ORDER BY orderItem [, orderItem ]* ')' ]
-      [ FILTER '(' WHERE condition ')' ]
       OVER window
   |   agg '(' '*' ')'
-      [ FILTER  '(' WHERE condition ')' ]
       OVER window
 {% endhighlight %}
 
 where *agg* is one of the operators in the following table, or a user-defined
 aggregate function.
+
+The *exclude* clause can be one of:
+- EXCLUDE NO OTHER: Does not exclude any row from the frame. This is the default.
+- EXCLUDE CURRENT ROW: Exclude the current row from the frame.
+- EXCLUDE GROUP: Exclude the current row and its ordering peers from the frame.
+- EXCLUDE TIES: Exclude all the ordering peers of the current row, but not the current row itself.
 
 `DISTINCT`, `FILTER` and `WITHIN GROUP` are as described for aggregate
 functions.
@@ -2812,6 +2827,7 @@ In the following:
 | b m p s | MD5(string)                              | Calculates an MD5 128-bit checksum of *string* and returns it as a hex string
 | m | MONTHNAME(date)                                | Returns the name, in the connection's locale, of the month in *datetime*; for example, it returns '二月' for both DATE '2020-02-10' and TIMESTAMP '2020-02-10 10:10:10'
 | o s | NVL(value1, value2)                          | Returns *value1* if *value1* is not null, otherwise *value2*
+| o s | NVL2(value1, value2, value3)                 | Returns *value2* if *value1* is not null, otherwise *value3*
 | b | OFFSET(index)                                  | When indexing an array, wrapping *index* in `OFFSET` returns the value at the 0-based *index*; throws error if *index* is out of bounds
 | b | ORDINAL(index)                                 | Similar to `OFFSET` except *index* begins at 1
 | b | PARSE_DATE(format, string)                     | Uses format specified by *format* to convert *string* representation of date to a DATE value
@@ -2833,8 +2849,8 @@ In the following:
 | b m p s | REPEAT(string, integer)                  | Returns a string consisting of *string* repeated of *integer* times; returns an empty string if *integer* is less than 1
 | b m | REVERSE(string)                              | Returns *string* with the order of the characters reversed
 | b m p s | RIGHT(string, length)                    | Returns the rightmost *length* characters from the *string*
-| h s | string1 RLIKE string2                        | Whether *string1* matches regex pattern *string2* (similar to `LIKE`, but uses Java regex)
-| h s | string1 NOT RLIKE string2                    | Whether *string1* does not match regex pattern *string2* (similar to `NOT LIKE`, but uses Java regex)
+| h m s | string1 RLIKE string2                      | Whether *string1* matches regex pattern *string2* (similar to `LIKE`, but uses Java regex)
+| h m s | string1 NOT RLIKE string2                  | Whether *string1* does not match regex pattern *string2* (similar to `NOT LIKE`, but uses Java regex)
 | b o s | RPAD(string, length[, pattern ])           | Returns a string or bytes value that consists of *string* appended to *length* with *pattern*
 | b o s | RTRIM(string)                              | Returns *string* with all blanks removed from the end
 | b | SAFE_ADD(numeric1, numeric2)                   | Returns *numeric1* + *numeric2*, or NULL on overflow.  Arguments are implicitly cast to one of the types BIGINT, DOUBLE, or DECIMAL
@@ -2934,6 +2950,8 @@ Dialect-specific aggregate functions.
 | b p | ARRAY_CONCAT_AGG( [ ALL &#124; DISTINCT ] value [ ORDER BY orderItem [, orderItem ]* ] ) | Concatenates arrays into arrays
 | p s | BOOL_AND(condition)                          | Synonym for `EVERY`
 | p s | BOOL_OR(condition)                           | Synonym for `SOME`
+| f | BOOLAND_AGG(condition)                         | Synonym for `EVERY`
+| f | BOOLOR_AGG(condition)                          | Synonym for `SOME`
 | b | COUNTIF(condition)                             | Returns the number of rows for which *condition* is TRUE; equivalent to `COUNT(*) FILTER (WHERE condition)`
 | m | GROUP_CONCAT( [ ALL &#124; DISTINCT ] value [, value ]* [ ORDER BY orderItem [, orderItem ]* ] [ SEPARATOR separator ] ) | MySQL-specific variant of `LISTAGG`
 | b | LOGICAL_AND(condition)                         | Synonym for `EVERY`

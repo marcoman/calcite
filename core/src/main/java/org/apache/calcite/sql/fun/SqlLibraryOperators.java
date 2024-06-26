@@ -42,6 +42,7 @@ import org.apache.calcite.sql.type.SqlTypeFamily;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.type.SqlTypeTransforms;
 import org.apache.calcite.sql.type.SqlTypeUtil;
+import org.apache.calcite.sql.validate.SqlMonotonicity;
 import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.util.Litmus;
@@ -187,7 +188,7 @@ public abstract class SqlLibraryOperators {
    * (Databricks, Postgres, Redshift, Snowflake). */
   @LibraryOperator(libraries = {POSTGRESQL})
   public static final SqlFunction DATE_PART =
-      new SqlExtractFunction("DATE_PART") {
+      new SqlExtractFunction("DATE_PART", true) {
         @Override public void unparse(SqlWriter writer, SqlCall call,
             int leftPrec, int rightPrec) {
           getSyntax().unparse(writer, this, call, leftPrec, rightPrec);
@@ -206,7 +207,7 @@ public abstract class SqlLibraryOperators {
    * (Microsoft SQL Server). */
   @LibraryOperator(libraries = {MSSQL})
   public static final SqlFunction DATEPART =
-      new SqlExtractFunction("DATEPART") {
+      new SqlExtractFunction("DATEPART", false) {
         @Override public void unparse(SqlWriter writer, SqlCall call,
             int leftPrec, int rightPrec) {
           getSyntax().unparse(writer, this, call, leftPrec, rightPrec);
@@ -269,6 +270,14 @@ public abstract class SqlLibraryOperators {
           ReturnTypes.LEAST_RESTRICTIVE
               .andThen(SqlTypeTransforms.TO_NULLABLE_ALL),
           OperandTypes.SAME_SAME);
+
+  /** The "NVL2(value, value, value)" function. */
+  @LibraryOperator(libraries = {ORACLE, SPARK})
+  public static final SqlBasicFunction NVL2 =
+      SqlBasicFunction.create(SqlKind.NVL2,
+          ReturnTypes.NVL2_RESTRICTIVE
+              .andThen(SqlTypeTransforms.TO_NULLABLE_ALL),
+          OperandTypes.SECOND_THIRD_SAME);
 
   /** The "IFNULL(value, value)" function. */
   @LibraryOperator(libraries = {BIG_QUERY, SPARK})
@@ -626,6 +635,18 @@ public abstract class SqlLibraryOperators {
   public static final SqlAggFunction BOOL_OR =
       new SqlMinMaxAggFunction("BOOL_OR", SqlKind.MAX, OperandTypes.BOOLEAN);
 
+  /** The "BOOLAND_AGG(condition)" aggregate function, Snowflake's
+   * equivalent to {@link SqlStdOperatorTable#EVERY}. */
+  @LibraryOperator(libraries = {SNOWFLAKE})
+  public static final SqlAggFunction BOOLAND_AGG =
+      new SqlMinMaxAggFunction("BOOLAND_AGG", SqlKind.MIN, OperandTypes.BOOLEAN);
+
+  /** The "BOOLOR_AGG(condition)" aggregate function, Snowflake's
+   * equivalent to {@link SqlStdOperatorTable#SOME}. */
+  @LibraryOperator(libraries = {SNOWFLAKE})
+  public static final SqlAggFunction BOOLOR_AGG =
+      new SqlMinMaxAggFunction("BOOLOR_AGG", SqlKind.MAX, OperandTypes.BOOLEAN);
+
   /** The "LOGICAL_AND(condition)" aggregate function, BigQuery's
    * equivalent to {@link SqlStdOperatorTable#EVERY}. */
   @LibraryOperator(libraries = {BIG_QUERY})
@@ -656,7 +677,7 @@ public abstract class SqlLibraryOperators {
       SqlBasicAggFunction
           .create(SqlKind.ARRAY_AGG,
               ReturnTypes.andThen(ReturnTypes::stripOrderBy,
-                  ReturnTypes.TO_ARRAY), OperandTypes.ANY)
+                  ReturnTypes.TO_ARRAY_NULLABLE), OperandTypes.ANY)
           .withFunctionType(SqlFunctionCategory.SYSTEM)
           .withSyntax(SqlSyntax.ORDERED_FUNCTION)
           .withAllowsNullTreatment(true);
@@ -973,12 +994,12 @@ public abstract class SqlLibraryOperators {
       new SqlLikeOperator("NOT ILIKE", SqlKind.LIKE, true, false);
 
   /** The regex variant of the LIKE operator. */
-  @LibraryOperator(libraries = {SPARK, HIVE})
+  @LibraryOperator(libraries = {SPARK, HIVE, MYSQL})
   public static final SqlSpecialOperator RLIKE =
       new SqlLikeOperator("RLIKE", SqlKind.RLIKE, false, true);
 
   /** The regex variant of the NOT LIKE operator. */
-  @LibraryOperator(libraries = {SPARK, HIVE})
+  @LibraryOperator(libraries = {SPARK, HIVE, MYSQL})
   public static final SqlSpecialOperator NOT_RLIKE =
       new SqlLikeOperator("NOT RLIKE", SqlKind.RLIKE, true, true);
 
@@ -1651,12 +1672,21 @@ public abstract class SqlLibraryOperators {
    *
    * <p>({@code TO_CHAR} is not supported in MySQL, but it is supported in
    * MariaDB, a variant of MySQL covered by {@link SqlLibrary#MYSQL}.) */
-  @LibraryOperator(libraries = {MYSQL, ORACLE, POSTGRESQL})
+  @LibraryOperator(libraries = {MYSQL, ORACLE})
   public static final SqlFunction TO_CHAR =
       SqlBasicFunction.create("TO_CHAR",
-          ReturnTypes.VARCHAR,
+          ReturnTypes.VARCHAR_NULLABLE,
           OperandTypes.TIMESTAMP_STRING,
           SqlFunctionCategory.TIMEDATE);
+
+  /** The "TO_CHAR(timestamp, format)" function;
+   * converts {@code timestamp} to string according to the given {@code format}. */
+  @LibraryOperator(libraries = {POSTGRESQL})
+  public static final SqlFunction TO_CHAR_PG =
+      new SqlBasicFunction("TO_CHAR", SqlKind.OTHER_FUNCTION,
+      SqlSyntax.FUNCTION, true, ReturnTypes.VARCHAR_NULLABLE, null,
+      OperandHandlers.DEFAULT, OperandTypes.TIMESTAMP_STRING, 0,
+          SqlFunctionCategory.TIMEDATE, call -> SqlMonotonicity.NOT_MONOTONIC, false) { };
 
   /** The "TO_DATE(string1, string2)" function; casts string1
    * to a DATE using the format specified in string2. */

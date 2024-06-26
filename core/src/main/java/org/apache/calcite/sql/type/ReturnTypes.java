@@ -35,6 +35,7 @@ import org.apache.calcite.util.Glossary;
 import org.apache.calcite.util.Util;
 
 import java.util.AbstractList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.UnaryOperator;
 
@@ -552,6 +553,15 @@ public abstract class ReturnTypes {
           opBinding.collectOperandTypes());
 
   /**
+   * Type-inference strategy for NVL2 function. It returns the least restrictive type
+   * between the second and third operands.
+   */
+  public static final SqlReturnTypeInference NVL2_RESTRICTIVE = opBinding -> {
+    return opBinding.getTypeFactory().leastRestrictive(
+        Arrays.asList(opBinding.getOperandType(1), opBinding.getOperandType(2)));
+  };
+
+  /**
    * Type-inference strategy that returns the type of the first operand, unless it
    * is an integer type, in which case the return type is DOUBLE.
    */
@@ -659,6 +669,13 @@ public abstract class ReturnTypes {
    */
   public static final SqlReturnTypeInference TO_ARRAY =
       ARG0.andThen(SqlTypeTransforms.TO_ARRAY);
+
+  /**
+   * Type-inference strategy whereby the result type of a call is nullable
+   * <code>ARRAY</code>.
+   */
+  public static final SqlReturnTypeInference TO_ARRAY_NULLABLE =
+      TO_ARRAY.andThen(SqlTypeTransforms.TO_NULLABLE);
 
   /**
    * Returns a MAP type.

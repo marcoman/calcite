@@ -120,6 +120,7 @@ import static org.apache.calcite.linq4j.tree.Expressions.list;
 import static org.apache.calcite.rel.type.RelDataTypeImpl.NON_NULLABLE_SUFFIX;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.PI;
 import static org.apache.calcite.sql.fun.SqlStdOperatorTable.QUANTIFY_OPERATORS;
+import static org.apache.calcite.sql.test.ResultCheckers.isDecimal;
 import static org.apache.calcite.sql.test.ResultCheckers.isExactDateTime;
 import static org.apache.calcite.sql.test.ResultCheckers.isExactTime;
 import static org.apache.calcite.sql.test.ResultCheckers.isExactly;
@@ -740,30 +741,32 @@ public class SqlOperatorTest {
   @MethodSource("safeParameters")
   void testCastStringToDecimal(CastType castType, SqlOperatorFixture f) {
     f.setFor(SqlStdOperatorTable.CAST, VmName.EXPAND);
-    if (!DECIMAL) {
-      return;
-    }
     // string to decimal
     f.checkScalarExact("cast('1.29' as decimal(2,1))",
         "DECIMAL(2, 1) NOT NULL",
-        "1.3");
+        "1.2");
     f.checkScalarExact("cast(' 1.25 ' as decimal(2,1))",
         "DECIMAL(2, 1) NOT NULL",
-        "1.3");
+        "1.2");
     f.checkScalarExact("cast('1.21' as decimal(2,1))",
         "DECIMAL(2, 1) NOT NULL",
         "1.2");
     f.checkScalarExact("cast(' -1.29 ' as decimal(2,1))",
         "DECIMAL(2, 1) NOT NULL",
-        "-1.3");
+        "-1.2");
     f.checkScalarExact("cast('-1.25' as decimal(2,1))",
         "DECIMAL(2, 1) NOT NULL",
-        "-1.3");
+        "-1.2");
     f.checkScalarExact("cast(' -1.21 ' as decimal(2,1))",
         "DECIMAL(2, 1) NOT NULL",
         "-1.2");
-    f.checkFails("cast(' -1.21e' as decimal(2,1))", INVALID_CHAR_MESSAGE,
-        true);
+    String shouldFail = "cast(' -1.21e' as decimal(2,1))";
+    if (castType == CastType.CAST) {
+      f.checkFails(shouldFail, INVALID_CHAR_MESSAGE, true);
+    } else {
+      // safe casts never fail
+      f.checkNull(shouldFail);
+    }
   }
 
   @ParameterizedTest
@@ -771,42 +774,40 @@ public class SqlOperatorTest {
   void testCastIntervalToNumeric(CastType castType, SqlOperatorFixture f) {
     f.setFor(SqlStdOperatorTable.CAST, VmName.EXPAND);
 
-    // interval to decimal
-    if (DECIMAL) {
-      f.checkScalarExact("cast(INTERVAL '1.29' second(1,2) as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "1.3");
-      f.checkScalarExact("cast(INTERVAL '1.25' second as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "1.3");
-      f.checkScalarExact("cast(INTERVAL '-1.29' second as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "-1.3");
-      f.checkScalarExact("cast(INTERVAL '-1.25' second as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "-1.3");
-      f.checkScalarExact("cast(INTERVAL '-1.21' second as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "-1.2");
-      f.checkScalarExact("cast(INTERVAL '5' minute as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "5.0");
-      f.checkScalarExact("cast(INTERVAL '5' hour as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "5.0");
-      f.checkScalarExact("cast(INTERVAL '5' day as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "5.0");
-      f.checkScalarExact("cast(INTERVAL '5' month as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "5.0");
-      f.checkScalarExact("cast(INTERVAL '5' year as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "5.0");
-      f.checkScalarExact("cast(INTERVAL '-5' day as decimal(2,1))",
-          "DECIMAL(2, 1) NOT NULL",
-          "-5.0");
-    }
+    // Interval to Decimal
+    f.checkScalarExact("cast(INTERVAL '1.29' second(1,2) as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        "1.2");
+    f.checkScalarExact("cast(INTERVAL '1.25' second as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        "1.2");
+    f.checkScalarExact("cast(INTERVAL '-1.29' second as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        "-1.2");
+    f.checkScalarExact("cast(INTERVAL '-1.25' second as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        "-1.2");
+    f.checkScalarExact("cast(INTERVAL '-1.21' second as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        "-1.2");
+    f.checkScalarExact("cast(INTERVAL '5' minute as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        isDecimal("5.0"));
+    f.checkScalarExact("cast(INTERVAL '5' hour as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        isDecimal("5.0"));
+    f.checkScalarExact("cast(INTERVAL '5' day as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        isDecimal("5.0"));
+    f.checkScalarExact("cast(INTERVAL '5' month as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        isDecimal("5.0"));
+    f.checkScalarExact("cast(INTERVAL '5' year as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        isDecimal("5.0"));
+    f.checkScalarExact("cast(INTERVAL '-5' day as decimal(2,1))",
+        "DECIMAL(2, 1) NOT NULL",
+        isDecimal("-5.0"));
 
     // Interval to bigint
     f.checkScalarExact("cast(INTERVAL '1.25' second as bigint)",
@@ -3790,9 +3791,10 @@ public class SqlOperatorTest {
     checkRlikeFunc(f, SqlLibrary.HIVE, SqlLibraryOperators.RLIKE);
     checkRlikeFunc(f, SqlLibrary.SPARK, SqlLibraryOperators.RLIKE);
     checkRlikeFunc(f, SqlLibrary.SPARK, SqlLibraryOperators.REGEXP);
+    checkRlikeFunc(f, SqlLibrary.MYSQL, SqlLibraryOperators.RLIKE);
     checkNotRlikeFunc(f.withLibrary(SqlLibrary.HIVE));
     checkNotRlikeFunc(f.withLibrary(SqlLibrary.SPARK));
-    checkRlikeFails(f.withLibrary(SqlLibrary.MYSQL));
+    checkNotRlikeFunc(f.withLibrary(SqlLibrary.MYSQL));
     checkRlikeFails(f.withLibrary(SqlLibrary.ORACLE));
 
     f.setFor(SqlLibraryOperators.REGEXP_LIKE, VM_EXPAND);
@@ -4717,7 +4719,7 @@ public class SqlOperatorTest {
   }
 
   @Test void testToChar() {
-    final SqlOperatorFixture f = fixture().withLibrary(SqlLibrary.POSTGRESQL);
+    final SqlOperatorFixture f = fixture().withLibrary(SqlLibrary.MYSQL);
     f.setFor(SqlLibraryOperators.TO_CHAR);
     f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'YYYY-MM-DD HH24:MI:SS.MS TZ')",
         "2022-06-03 12:15:48.678",
@@ -4794,6 +4796,273 @@ public class SqlOperatorTest {
     f.checkNull("to_char(timestamp '2022-06-03 12:15:48.678', NULL)");
     f.checkNull("to_char(cast(NULL as timestamp), NULL)");
     f.checkNull("to_char(cast(NULL as timestamp), 'Day')");
+  }
+
+  @Test void testToCharPg() {
+    final SqlOperatorFixture f = fixture().withLibrary(SqlLibrary.POSTGRESQL);
+    f.setFor(SqlLibraryOperators.TO_CHAR_PG);
+    final Locale originalLocale = Locale.getDefault();
+
+    try {
+      Locale.setDefault(Locale.US);
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'YYYY-MM-DD HH24:MI:SS.MS')",
+          "2022-06-03 12:15:48.678",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'Day')",
+          "Friday",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '0001-01-01 00:00:00.000', 'Day')",
+          "Monday",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'DY')",
+          "FRI",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '0001-01-01 00:00:00.000', 'DY')",
+          "MON",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'CC')",
+          "21",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'HH')",
+          "12",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'HH12')",
+          "01",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'HH24')",
+          "13",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'MI')",
+          "15",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'SS')",
+          "48",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'MS')",
+          "678",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'US')",
+          "678000",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'FF1')",
+          "6",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'FF2')",
+          "67",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'FF3')",
+          "678",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'FF4')",
+          "6780",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'FF5')",
+          "67800",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'FF6')",
+          "678000",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'SSSS')",
+          "44148",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'SSSSS')",
+          "44148",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'AM')",
+          "PM",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'am')",
+          "pm",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 02:15:48.678', 'PM')",
+          "AM",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 02:15:48.678', 'pm')",
+          "am",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'A.M.')",
+          "P.M.",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'a.m.')",
+          "p.m.",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 02:15:48.678', 'P.M.')",
+          "A.M.",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 02:15:48.678', 'p.m.')",
+          "a.m.",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'Y,YYY')",
+          "2,022",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'YYYY')",
+          "2022",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'YYY')",
+          "022",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'YY')",
+          "22",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'Y')",
+          "2",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2023-01-01 12:15:48.678', 'IYYY')",
+          "2022",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2023-01-01 12:15:48.678', 'IYY')",
+          "022",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2023-01-01 12:15:48.678', 'IY')",
+          "22",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2023-01-01 12:15:48.678', 'I')",
+          "2",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'BC')",
+          "AD",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'bc')",
+          "ad",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'AD')",
+          "AD",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'ad')",
+          "ad",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'B.C.')",
+          "A.D.",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'b.c.')",
+          "a.d.",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'A.D.')",
+          "A.D.",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'a.d.')",
+          "a.d.",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'MONTH')",
+          "JUNE",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'Month')",
+          "June",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'month')",
+          "june",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'MON')",
+          "JUN",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'Mon')",
+          "Jun",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'mon')",
+          "jun",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'DAY')",
+          "FRIDAY",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'Day')",
+          "Friday",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'day')",
+          "friday",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'DY')",
+          "FRI",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '0001-01-01 00:00:00.000', 'DY')",
+          "MON",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'Dy')",
+          "Fri",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'dy')",
+          "fri",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'DDD')",
+          "154",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'IDDD')",
+          "152",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'DD')",
+          "03",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'D')",
+          "6",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'ID')",
+          "5",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'W')",
+          "1",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'WW')",
+          "22",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'IW')",
+          "22",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'CC')",
+          "21",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 12:15:48.678', 'J')",
+          "2459734",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'Q')",
+          "2",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'RM')",
+          "VI",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'rm')",
+          "vi",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'YYYY')",
+          "2022",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'YY')",
+          "22",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'Month')",
+          "June",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'Mon')",
+          "Jun",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'MM')",
+          "06",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'CC')",
+          "21",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'DDD')",
+          "154",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'DD')",
+          "03",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'D')",
+          "6",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'W')",
+          "1",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'WW')",
+          "22",
+          "VARCHAR NOT NULL");
+      f.checkString("to_char(timestamp '2022-06-03 13:15:48.678', 'gggggg')",
+          "gggggg",
+          "VARCHAR NOT NULL");
+      f.checkNull("to_char(timestamp '2022-06-03 12:15:48.678', NULL)");
+      f.checkNull("to_char(cast(NULL as timestamp), NULL)");
+      f.checkNull("to_char(cast(NULL as timestamp), 'Day')");
+    } finally {
+      Locale.setDefault(originalLocale);
+    }
   }
 
   @Test void testToDate() {
@@ -7775,23 +8044,16 @@ public class SqlOperatorTest {
     final SqlOperatorFixture f = f0.withLibrary(SqlLibrary.SPARK);
     f.checkScalar("map_entries(map['foo', 1, 'bar', 2])", "[{foo, 1}, {bar, 2}]",
         "RecordType(CHAR(3) NOT NULL f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
-    f.checkScalar("map_entries(map['foo', 1, null, 2])", "[{foo, 1}, {null, 2}]",
-        "RecordType(CHAR(3) f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
+
     // elements cast
     // key cast
     f.checkScalar("map_entries(map[cast(1 as tinyint), 1, 2, 2])", "[{1, 1}, {2, 2}]",
         "RecordType(INTEGER NOT NULL f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
-    f.checkScalar("map_entries(map[cast(1 as bigint), 1, null, 2])", "[{1, 1}, {null, 2}]",
-        "RecordType(BIGINT f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
-    f.checkScalar("map_entries(map[cast(1 as decimal), 1, null, 2])", "[{1, 1}, {null, 2}]",
-        "RecordType(DECIMAL(19, 0) f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
+
     // value cast
     f.checkScalar("map_entries(map[1, cast(1 as tinyint), 2, 2])", "[{1, 1}, {2, 2}]",
         "RecordType(INTEGER NOT NULL f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
-    f.checkScalar("map_entries(map[1, cast(1 as bigint), null, 2])", "[{1, 1}, {null, 2}]",
-        "RecordType(INTEGER f0, BIGINT NOT NULL f1) NOT NULL ARRAY NOT NULL");
-    f.checkScalar("map_entries(map[1, cast(1 as decimal), null, 2])", "[{1, 1}, {null, 2}]",
-        "RecordType(INTEGER f0, DECIMAL(19, 0) NOT NULL f1) NOT NULL ARRAY NOT NULL");
+
 
     // 2. check with map function, map(k, v ...)
     final SqlOperatorFixture f1 = fixture()
@@ -7801,8 +8063,16 @@ public class SqlOperatorTest {
         "RecordType(UNKNOWN NOT NULL f0, UNKNOWN NOT NULL f1) NOT NULL ARRAY NOT NULL");
     f1.checkScalar("map_entries(map('foo', 1, 'bar', 2))", "[{foo, 1}, {bar, 2}]",
         "RecordType(CHAR(3) NOT NULL f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
-    f1.checkScalar("map_entries(map('foo', 1, null, 2))", "[{foo, 1}, {null, 2}]",
-        "RecordType(CHAR(3) f0, INTEGER NOT NULL f1) NOT NULL ARRAY NOT NULL");
+
+    // 3. check key is not allowed to be null
+    f.checkFails("map_entries(map[cast(1 as decimal), 1, null, 2])",
+        "Cannot use null as map key", true);
+    f.checkFails("map_entries(map[1, cast(1 as bigint), null, 2])",
+        "Cannot use null as map key", true);
+    f.checkFails("map_entries(map[1, cast(1 as decimal), null, 2])",
+        "Cannot use null as map key", true);
+    f.checkFails("map_entries(map['foo', 1, null, 2])",
+        "Cannot use null as map key", true);
   }
 
   /** Tests {@code MAP_KEYS} function from Spark. */
@@ -10437,6 +10707,47 @@ public class SqlOperatorTest {
     checkNvl(f, FunctionAlias.of(SqlLibraryOperators.NVL));
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6397">[CALCITE-6397]
+   * Add NVL2 function (enabled in Oracle, Spark library) </a>.
+   */
+  @Test void testNvl2Func() {
+    final SqlOperatorFixture f = fixture();
+    f.setFor(SqlLibraryOperators.NVL2, VmName.EXPAND);
+    f.checkFails("^nvl2(NULL, 2, 1)^",
+        "No match found for function signature "
+            + "NVL2\\(<NULL>, <NUMERIC>, <NUMERIC>\\)", false);
+
+    final Consumer<SqlOperatorFixture> consumer = f12 -> {
+      f12.checkScalar("nvl2(NULL, 2, 1)", "1", "INTEGER NOT NULL");
+      f12.checkScalar("nvl2(true, true, false)", true, "BOOLEAN NOT NULL");
+      f12.checkScalar("nvl2(false, true, false)", true, "BOOLEAN NOT NULL");
+      f12.checkScalar("nvl2(NULL, true, false)", false, "BOOLEAN NOT NULL");
+      f12.checkScalar("nvl2(3, 2, 1)", "2", "INTEGER NOT NULL");
+      f12.checkScalar("nvl2(3, 'a', 'b')", "a", "CHAR(1) NOT NULL");
+      f12.checkScalar("nvl2(NULL, 'a', 'b')", "b", "CHAR(1) NOT NULL");
+      f12.checkScalar("nvl2(NULL, 'ab', 'de')", "de", "CHAR(2) NOT NULL");
+      f12.checkScalar("nvl2('ab', 'abc', 'def')", "abc", "CHAR(3) NOT NULL");
+      f12.checkScalar("nvl2('a', 3, 2)", "3", "INTEGER NOT NULL");
+      f12.checkScalar("NVL2(NULL, 3.0, 4.0)", "4.0", "DECIMAL(2, 1) NOT NULL");
+      f12.checkScalar("NVL2('abc', 3.0, 4.0)", "3.0", "DECIMAL(2, 1) NOT NULL");
+      f12.checkScalar("NVL2(1, 3.0, 2.111)", "3.0", "DECIMAL(4, 3) NOT NULL");
+      f12.checkScalar("NVL2(NULL, 3.0, 2.111)", "2.111", "DECIMAL(4, 3) NOT NULL");
+      f12.checkScalar("NVL2(3.111, 3.1415926, 2.111)", "3.1415926", "DECIMAL(8, 7) NOT NULL");
+
+      f12.checkNull("nvl2('ab', CAST(NULL AS VARCHAR(6)), 'def')");
+      f12.checkNull("nvl2(NULL, 'abc', NULL)");
+      f12.checkNull("nvl2(NULL, NULL, NULL)");
+
+      f12.checkFails("^NVL2(2.0, 2.0, true)^", "Parameters must be of the same type", false);
+      f12.checkFails("^NVL2(NULL, 2.0, true)^", "Parameters must be of the same type", false);
+      f12.checkFails("^NVL2(2.0, 1, true)^", "Parameters must be of the same type", false);
+      f12.checkFails("^NVL2(NULL, 1, true)^", "Parameters must be of the same type", false);
+    };
+    f.forEachLibrary(list(SqlLibrary.ORACLE, SqlLibrary.SPARK), consumer);
+
+  }
+
   /** Tests the {@code NVL} and {@code IFNULL} operators. */
   void checkNvl(SqlOperatorFixture f0, FunctionAlias functionAlias) {
     final SqlFunction function = functionAlias.function;
@@ -10779,11 +11090,12 @@ public class SqlOperatorTest {
   }
 
   private static void checkArrayAggFunc(SqlOperatorFixture f) {
-    f.setFor(SqlLibraryOperators.ARRAY_CONCAT_AGG, VM_FENNEL, VM_JAVA);
+    f.setFor(SqlLibraryOperators.ARRAY_AGG, VM_FENNEL, VM_JAVA);
     final String[] values = {"'x'", "null", "'yz'"};
-    f.checkAgg("array_agg(x)", values, isSingle("[x, yz]"));
-    f.checkAgg("array_agg(x ignore nulls)", values, isSingle("[x, yz]"));
-    f.checkAgg("array_agg(x respect nulls)", values, isSingle("[x, yz]"));
+    f.checkAggType("array_agg(x)", "INTEGER NOT NULL ARRAY NOT NULL");
+    f.checkAgg("array_agg(x)", values, "CHAR(2) ARRAY", isSingle("[x, yz]"));
+    f.checkAgg("array_agg(x ignore nulls)", values, "CHAR(2) ARRAY", isSingle("[x, yz]"));
+    f.checkAgg("array_agg(x respect nulls)", values, "CHAR(2) ARRAY", isSingle("[x, yz]"));
     final String expectedError = "Invalid number of arguments "
         + "to function 'ARRAY_AGG'. Was expecting 1 arguments";
     f.checkAggFails("^array_agg(x,':')^", values, expectedError, false);
@@ -10794,7 +11106,7 @@ public class SqlOperatorTest {
   }
 
   private static void checkArrayAggFuncFails(SqlOperatorFixture t) {
-    t.setFor(SqlLibraryOperators.ARRAY_CONCAT_AGG, VM_FENNEL, VM_JAVA);
+    t.setFor(SqlLibraryOperators.ARRAY_AGG, VM_FENNEL, VM_JAVA);
     final String[] values = {"'x'", "'y'"};
     final String expectedError = "No match found for function signature "
         + "ARRAY_AGG\\(<CHARACTER>\\)";
@@ -14186,9 +14498,12 @@ public class SqlOperatorTest {
     final String[] values = {"true", "true", "null"};
     f.checkAggFails("^bool_and(x)^", values,
         "No match found for function signature BOOL_AND\\(<BOOLEAN>\\)", false);
+    f.checkAggFails("^booland_agg(x)^", values,
+        "No match found for function signature BOOLAND_AGG\\(<BOOLEAN>\\)", false);
 
     checkBoolAndFunc(f.withLibrary(SqlLibrary.POSTGRESQL));
     checkBoolAndFunc(f.withLibrary(SqlLibrary.SPARK));
+    checkBoolAndAggFunc(f.withLibrary(SqlLibrary.SNOWFLAKE));
   }
 
   private static void checkBoolAndFunc(SqlOperatorFixture f) {
@@ -14217,6 +14532,32 @@ public class SqlOperatorTest {
     f.checkAgg("bool_and(x)", values4, isNullValue());
   }
 
+  private static void checkBoolAndAggFunc(SqlOperatorFixture f) {
+    f.setFor(SqlLibraryOperators.BOOLAND_AGG, VM_EXPAND);
+
+    f.checkFails("booland_agg(^*^)", "Unknown identifier '\\*'", false);
+    f.checkType("booland_agg(true)", "BOOLEAN");
+    f.checkFails("^booland_agg(1)^",
+        "Cannot apply 'BOOLAND_AGG' to arguments of type 'BOOLAND_AGG\\(<INTEGER>\\)'\\. "
+            + "Supported form\\(s\\): 'BOOLAND_AGG\\(<BOOLEAN>\\)'",
+        false);
+    f.checkFails("^booland_agg()^",
+        "Invalid number of arguments to function 'BOOLAND_AGG'. Was expecting 1 arguments",
+        false);
+    f.checkFails("^booland_agg(true, true)^",
+        "Invalid number of arguments to function 'BOOLAND_AGG'. Was expecting 1 arguments",
+        false);
+
+    final String[] values1 = {"true", "true", "null"};
+    f.checkAgg("booland_agg(x)", values1, isSingle(true));
+    String[] values2 = {"true", "false", "null"};
+    f.checkAgg("booland_agg(x)", values2, isSingle(false));
+    String[] values3 = {"true", "false", "false"};
+    f.checkAgg("booland_agg(x)", values3, isSingle(false));
+    String[] values4 = {"null"};
+    f.checkAgg("booland_agg(x)", values4, isNullValue());
+  }
+
   /** Test case for
    * <a href="https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6094">
    * Linq4j.ConstantExpression.write crashes on special FP values</a>. */
@@ -14234,9 +14575,12 @@ public class SqlOperatorTest {
     final String[] values = {"true", "true", "null"};
     f.checkAggFails("^bool_or(x)^", values,
         "No match found for function signature BOOL_OR\\(<BOOLEAN>\\)", false);
+    f.checkAggFails("^boolor_agg(x)^", values,
+        "No match found for function signature BOOLOR_AGG\\(<BOOLEAN>\\)", false);
 
     checkBoolOrFunc(f.withLibrary(SqlLibrary.POSTGRESQL));
     checkBoolOrFunc(f.withLibrary(SqlLibrary.SPARK));
+    checkBoolOrAggFunc(f.withLibrary(SqlLibrary.SNOWFLAKE));
   }
 
   private static void checkBoolOrFunc(SqlOperatorFixture f) {
@@ -14263,6 +14607,32 @@ public class SqlOperatorTest {
     f.checkAgg("bool_or(x)", values3, isSingle(false));
     String[] values4 = {"null"};
     f.checkAgg("bool_or(x)", values4, isNullValue());
+  }
+
+  private static void checkBoolOrAggFunc(SqlOperatorFixture f) {
+    f.setFor(SqlLibraryOperators.BOOLOR_AGG, VM_EXPAND);
+
+    f.checkFails("boolor_agg(^*^)", "Unknown identifier '\\*'", false);
+    f.checkType("boolor_agg(true)", "BOOLEAN");
+    f.checkFails("^boolor_agg(1)^",
+        "Cannot apply 'BOOLOR_AGG' to arguments of type 'BOOLOR_AGG\\(<INTEGER>\\)'\\. "
+            + "Supported form\\(s\\): 'BOOLOR_AGG\\(<BOOLEAN>\\)'",
+        false);
+    f.checkFails("^boolor_agg()^",
+        "Invalid number of arguments to function 'BOOLOR_AGG'. Was expecting 1 arguments",
+        false);
+    f.checkFails("^boolor_agg(true, true)^",
+        "Invalid number of arguments to function 'BOOLOR_AGG'. Was expecting 1 arguments",
+        false);
+
+    final String[] values1 = {"true", "true", "null"};
+    f.checkAgg("boolor_agg(x)", values1, isSingle(true));
+    String[] values2 = {"true", "false", "null"};
+    f.checkAgg("boolor_agg(x)", values2, isSingle(true));
+    String[] values3 = {"false", "false", "false"};
+    f.checkAgg("boolor_agg(x)", values3, isSingle(false));
+    String[] values4 = {"null"};
+    f.checkAgg("boolor_agg(x)", values4, isNullValue());
   }
 
   @Test void testLogicalAndFunc() {
