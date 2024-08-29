@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.adapter.geode.rel;
 
+import io.github.pixee.security.BoundedLineReader;
 import org.apache.geode.cache.Region;
 import org.apache.geode.pdx.PdxInstance;
 import org.apache.geode.pdx.PdxInstanceFactory;
@@ -54,7 +55,7 @@ class JsonLoader {
     Objects.requireNonNull(reader, "reader");
     try (BufferedReader br = new BufferedReader(reader)) {
       List<Map<String, Object>> mapList = new ArrayList<>();
-      for (String line; (line = br.readLine()) != null;) {
+      for (String line; (line = BoundedLineReader.readLine(br, 5_000_000)) != null;) {
         @SuppressWarnings("unchecked")
         Map<String, Object> jsonMap = mapper.readValue(line, Map.class);
         mapList.add(jsonMap);

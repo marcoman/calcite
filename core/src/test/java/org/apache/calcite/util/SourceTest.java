@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.util;
 import com.google.common.io.CharSource;
+import io.github.pixee.security.BoundedLineReader;
 
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -70,9 +71,9 @@ class SourceTest {
     for (Reader r : Arrays.asList(source.reader(),
         new InputStreamReader(source.openStream(), StandardCharsets.UTF_8.name()))) {
       try (BufferedReader reader = new BufferedReader(r)) {
-        assertEquals("a", reader.readLine());
-        assertEquals("b", reader.readLine());
-        assertNull(reader.readLine());
+        assertEquals("a", BoundedLineReader.readLine(reader, 5_000_000));
+        assertEquals("b", BoundedLineReader.readLine(reader, 5_000_000));
+        assertNull(BoundedLineReader.readLine(reader, 5_000_000));
       }
     }
   }

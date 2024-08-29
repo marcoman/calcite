@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.util;
 
+import io.github.pixee.security.BoundedLineReader;
 import org.apache.calcite.avatica.util.DateTimeUtils;
 import org.apache.calcite.avatica.util.Spaces;
 import org.apache.calcite.config.CalciteSystemProperty;
@@ -2491,7 +2492,7 @@ public class Util {
     BufferedReader br = new BufferedReader(sr);
     try {
       String line;
-      for (int i = 1; (line = br.readLine()) != null; i++) {
+      for (int i = 1; (line = BoundedLineReader.readLine(br, 5_000_000)) != null; i++) {
         out.print("/*");
         String number = Integer.toString(i);
         if (number.length() < 4) {

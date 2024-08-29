@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.adapter.splunk.search;
 
+import io.github.pixee.security.BoundedLineReader;
 import org.apache.calcite.adapter.splunk.util.StringUtils;
 import org.apache.calcite.linq4j.Enumerator;
 import org.apache.calcite.linq4j.Linq4j;
@@ -107,7 +108,7 @@ public class SplunkConnectionImpl implements SplunkConnection {
 
       String line;
       StringBuilder reply = new StringBuilder();
-      while ((line = rd.readLine()) != null) {
+      while ((line = BoundedLineReader.readLine(rd, 5_000_000)) != null) {
         reply.append(line);
         reply.append("\n");
       }
