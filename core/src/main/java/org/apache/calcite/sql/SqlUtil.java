@@ -519,7 +519,8 @@ public abstract class SqlUtil {
   private static Iterator<SqlOperator> filterOperatorRoutinesByKind(
       Iterator<SqlOperator> routines, final SqlKind sqlKind) {
     return Iterators.filter(routines,
-        operator -> Objects.requireNonNull(operator, "operator").getKind() == sqlKind);
+        operator -> Objects.requireNonNull(operator, "operator")
+            .getKind().getFunctionKind() == sqlKind);
   }
 
   /**
@@ -1262,7 +1263,7 @@ public abstract class SqlUtil {
 
   /** Returns whether an AST tree contains a call that matches a given
    * predicate. */
-  private static boolean containsCall(SqlNode node,
+  public static boolean containsCall(SqlNode node,
       Predicate<SqlCall> callPredicate) {
     try {
       SqlVisitor<Void> visitor =

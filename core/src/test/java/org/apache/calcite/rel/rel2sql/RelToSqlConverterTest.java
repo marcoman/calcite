@@ -37,6 +37,7 @@ import org.apache.calcite.rel.rules.AggregateJoinTransposeRule;
 import org.apache.calcite.rel.rules.AggregateProjectMergeRule;
 import org.apache.calcite.rel.rules.CoreRules;
 import org.apache.calcite.rel.rules.FilterJoinRule;
+import org.apache.calcite.rel.rules.ProjectOverSumToSum0Rule;
 import org.apache.calcite.rel.rules.ProjectToWindowRule;
 import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.rel.type.RelDataType;
@@ -484,6 +485,28 @@ class RelToSqlConverterTest {
     final Function<RelBuilder, RelNode> relFn = b -> b
         .scan("EMP")
         .filter(b.in(b.field("COMM"), b.literal(1), b.literal(2)))
+        .build();
+    final String expected = "SELECT *\n"
+        + "FROM \"scott\".\"EMP\"\n"
+        + "WHERE \"COMM\" IN (1, 2)";
+    relFn(relFn).ok(expected);
+  }
+
+  @Test void testSelectWhereIn2() {
+    final Function<RelBuilder, RelNode> relFn = b -> b
+        .scan("EMP")
+        .filter(b.in(b.field("COMM"), b.cast(b.literal(1.1), SqlTypeName.INTEGER), b.literal(2)))
+        .build();
+    final String expected = "SELECT *\n"
+        + "FROM \"scott\".\"EMP\"\n"
+        + "WHERE \"COMM\" IN (1, 2)";
+    relFn(relFn).ok(expected);
+  }
+
+  @Test void testSelectWhereIn3() {
+    final Function<RelBuilder, RelNode> relFn = b -> b
+        .scan("EMP")
+        .filter(b.in(b.field("COMM"), b.cast(b.literal(1.1), SqlTypeName.INTEGER), b.literal(2)))
         .build();
     final String expected = "SELECT *\n"
         + "FROM \"scott\".\"EMP\"\n"
@@ -1375,8 +1398,90 @@ class RelToSqlConverterTest {
         + " ELSE NULL END / (COUNT(\"net_weight\")"
         + " OVER (ORDER BY \"product_id\" ROWS BETWEEN 3 PRECEDING AND CURRENT ROW))\n"
         + "FROM \"foodmart\".\"product\"";
+
+    HepProgramBuilder builder = new HepProgramBuilder();
+    builder.addRuleClass(ProjectOverSumToSum0Rule.class);
+    HepPlanner hepPlanner = new HepPlanner(builder.build());
+    RuleSet rules =
+        RuleSets.ofList(CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE);
+
+    sql(query).withPostgresql().optimize(rules, hepPlanner).ok(expectedPostgresql);
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6436">[CALCITE-6436]
+   * JDBC adapter generates SQL missing parentheses when comparing 3 values with
+   * the same precedence like (a=b)=c</a>. */
+  @Test void testMissingParenthesesWithCondition1() {
+    final String query = "select \"product_id\" from \"foodmart\".\"product\" where "
+        + "(\"product_id\" = 0) = (\"product_class_id\" = 0)";
+    final String expectedQuery = "SELECT \"product_id\"\nFROM \"foodmart\".\"product\"\nWHERE "
+        + "(\"product_id\" = 0) = (\"product_class_id\" = 0)";
     sql(query)
-        .withPostgresql().ok(expectedPostgresql);
+        .ok(expectedQuery);
+  }
+
+  @Test void testMissingParenthesesWithCondition2() {
+    final String query = "select \"product_id\" from \"foodmart\".\"product\" where"
+        + " (\"product_id\" = 0) in (select \"product_id\" = 0 from \"foodmart\".\"product\")";
+    final String expectedQuery = "SELECT \"product_id\"\nFROM \"foodmart\".\"product\"\n"
+        + "WHERE (\"product_id\" = 0) IN "
+        + "(SELECT \"product_id\" = 0\nFROM \"foodmart\".\"product\")";
+    sql(query)
+        .ok(expectedQuery);
+  }
+
+  @Test void testMissingParenthesesWithProject() {
+    final String query = "select (\"product_id\" = 0) = (\"product_class_id\" = 0) "
+        + "from \"foodmart\".\"product\"";
+    final String expectedQuery = "SELECT (\"product_id\" = 0) = (\"product_class_id\" = 0)\n"
+        + "FROM \"foodmart\".\"product\"";
+    sql(query)
+        .ok(expectedQuery);
+  }
+
+  @Test void testMissingParenthesesWithSubquery1() {
+    final String query = "select (\"product_id\" in "
+        + "(select \"product_class_id\" from \"foodmart\".\"product\")) in\n"
+        + "       (select \"product_class_id\" = 0 from \"foodmart\".\"product\")\n"
+        + "from \"foodmart\".\"product\"";
+    final String expectedQuery = "SELECT (\"product_id\" IN "
+        + "(SELECT \"product_class_id\"\nFROM \"foodmart\".\"product\")) "
+        + "IN (SELECT \"product_class_id\" = 0\nFROM \"foodmart\".\"product\")\n"
+        + "FROM \"foodmart\".\"product\"";
+    sql(query)
+        .withConfig(c -> c.withExpand(false))
+        .ok(expectedQuery);
+  }
+
+  @Test void testMissingParenthesesWithSubquery2() {
+    final String query = "select (\"product_id\" not in "
+        + "(select \"product_class_id\" from \"foodmart\".\"product\")) in\n"
+        + "       (select \"product_class_id\" = 0 from \"foodmart\".\"product\")\n"
+        + "from \"foodmart\".\"product\"";
+    final String expectedQuery = "SELECT (\"product_id\" NOT IN "
+        + "(SELECT \"product_class_id\"\nFROM \"foodmart\".\"product\")) "
+        + "IN (SELECT \"product_class_id\" = 0\nFROM \"foodmart\".\"product\")\n"
+        + "FROM \"foodmart\".\"product\"";
+    sql(query)
+        .withConfig(c -> c.withExpand(false))
+        .ok(expectedQuery);
+  }
+
+  @Test void testMissingParenthesesWithSubquery3() {
+    final String query = "select \"product_id\"\n"
+        + "from \"foodmart\".\"product\"\n"
+        + "where (\"product_id\" not in\n"
+        + "       (select \"product_class_id\" from \"foodmart\".\"product\"))\n"
+        + "          in (select \"product_class_id\" = 0 from \"foodmart\".\"product\")";
+    final String expectedQuery = "SELECT \"product_id\"\n"
+        + "FROM \"foodmart\".\"product\"\n"
+        + "WHERE (\"product_id\" NOT IN "
+        + "(SELECT \"product_class_id\"\nFROM \"foodmart\".\"product\")) "
+        + "IN (SELECT \"product_class_id\" = 0\nFROM \"foodmart\".\"product\")";
+    sql(query)
+        .withConfig(c -> c.withExpand(false))
+        .ok(expectedQuery);
   }
 
   /** Test case for
@@ -2693,7 +2798,7 @@ class RelToSqlConverterTest {
   /**
    * Tests that IN can be un-parsed.
    *
-   * <p>This cannot be tested using "sql", because because Calcite's SQL parser
+   * <p>This cannot be tested using "sql", because Calcite's SQL parser
    * replaces INs with ORs or sub-queries.
    */
   @Test void testUnparseIn1() {
@@ -4561,9 +4666,12 @@ class RelToSqlConverterTest {
             + "FROM \"foodmart\".\"employee\"";
 
     HepProgramBuilder builder = new HepProgramBuilder();
+    builder.addRuleClass(ProjectOverSumToSum0Rule.class);
     builder.addRuleClass(ProjectToWindowRule.class);
     HepPlanner hepPlanner = new HepPlanner(builder.build());
-    RuleSet rules = RuleSets.ofList(CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW);
+    RuleSet rules =
+        RuleSets.ofList(CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE,
+            CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW);
 
     sql(query0).optimize(rules, hepPlanner).ok(expected0);
     sql(query1).optimize(rules, hepPlanner).ok(expected1);
@@ -4574,6 +4682,59 @@ class RelToSqlConverterTest {
     sql(query6).optimize(rules, hepPlanner).ok(expected6);
     sql(query7).optimize(rules, hepPlanner).ok(expected7);
     sql(query8).optimize(rules, hepPlanner).ok(expected8);
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6475">[CALCITE-6475]
+   * RelToSql converter fails when the IN-list contains NULL
+   * and it is converted to VALUES</a>. */
+  @Test void convertInListToValues1() {
+    String query = "select \"product_id\" from \"product\"\n"
+        + "where \"product_id\" in (12, null)";
+    String expected = "SELECT \"product\".\"product_id\"\n"
+        + "FROM \"foodmart\".\"product\"\n"
+        + "INNER JOIN (SELECT \"ROW_VALUE\"\n"
+        + "FROM (VALUES (12),\n(NULL)) AS \"t\" (\"ROW_VALUE\")\n"
+        + "GROUP BY \"ROW_VALUE\") AS \"t0\" ON \"product\".\"product_id\" = \"t0\".\"ROW_VALUE\"";
+    sql(query).withConfig(c -> c.withInSubQueryThreshold(1)).ok(expected);
+  }
+
+  @Test void convertInListToValues2() {
+    String query = "select \"brand_name\" from \"product\"\n"
+        + "where cast(\"brand_name\" as char) in ('n', null)";
+    String expected = "SELECT \"t\".\"brand_name\"\n"
+        + "FROM (SELECT \"product_class_id\", \"product_id\","
+        + " \"brand_name\", \"product_name\","
+        + " \"SKU\", \"SRP\", \"gross_weight\","
+        + " \"net_weight\", \"recyclable_package\","
+        + " \"low_fat\", \"units_per_case\","
+        + " \"cases_per_pallet\", \"shelf_width\","
+        + " \"shelf_height\", \"shelf_depth\","
+        + " CAST(\"brand_name\" AS CHAR(1) CHARACTER SET \"ISO-8859-1\") AS \"brand_name0\"\n"
+        + "FROM \"foodmart\".\"product\") AS \"t\"\n"
+        + "INNER JOIN (SELECT \"ROW_VALUE\"\n"
+        + "FROM (VALUES ('n'),\n(NULL)) AS \"t0\" (\"ROW_VALUE\")\n"
+        + "GROUP BY \"ROW_VALUE\") AS \"t1\" ON \"t\".\"brand_name0\" = \"t1\".\"ROW_VALUE\"";
+    sql(query).withConfig(c -> c.withInSubQueryThreshold(1)).ok(expected);
+  }
+
+  @Test void convertInListToValues3() {
+    String query = "select \"brand_name\" from \"product\"\n"
+        + "where (\"brand_name\" = \"product_name\") in (false, null)";
+    String expected = "SELECT \"t\".\"brand_name\"\n"
+        + "FROM (SELECT \"product_class_id\", \"product_id\","
+        + " \"brand_name\", \"product_name\","
+        + " \"SKU\", \"SRP\", \"gross_weight\","
+        + " \"net_weight\", \"recyclable_package\","
+        + " \"low_fat\", \"units_per_case\","
+        + " \"cases_per_pallet\", \"shelf_width\","
+        + " \"shelf_height\", \"shelf_depth\","
+        + " \"brand_name\" = \"product_name\" AS \"$f15\"\n"
+        + "FROM \"foodmart\".\"product\") AS \"t\"\n"
+        + "INNER JOIN (SELECT \"ROW_VALUE\"\n"
+        + "FROM (VALUES (FALSE),\n(NULL)) AS \"t0\" (\"ROW_VALUE\")\n"
+        + "GROUP BY \"ROW_VALUE\") AS \"t1\" ON \"t\".\"$f15\" = \"t1\".\"ROW_VALUE\"";
+    sql(query).withConfig(c -> c.withInSubQueryThreshold(1)).ok(expected);
   }
 
   /**
@@ -5264,7 +5425,8 @@ class RelToSqlConverterTest {
    * is greater than maximum numeric scale</a>. */
   @Test void testNumericScaleMod() {
     final String sql = "SELECT MOD(CAST(2 AS DECIMAL(39, 20)), 2)";
-    final String expected = "SELECT MOD(2, 2)\nFROM (VALUES (0)) AS \"t\" (\"ZERO\")";
+    final String expected =
+        "SELECT MOD(2.00000000000000000000, 2)\nFROM (VALUES (0)) AS \"t\" (\"ZERO\")";
     sql(sql).withPostgresqlModifiedDecimalTypeSystem()
         .ok(expected);
   }
@@ -6284,6 +6446,10 @@ class RelToSqlConverterTest {
     sql(sql).ok(expected);
   }
 
+  /**
+   * Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6546">[CALCITE-6546]
+   * Hive dialect does not support a sub-query in the FROM clause without alias</a>. */
   @Test void testValues() {
     final String sql = "select \"a\"\n"
         + "from (values (1, 'x'), (2, 'yy')) as t(\"a\", \"b\")";
@@ -6310,7 +6476,7 @@ class RelToSqlConverterTest {
     final String expectedHive = "SELECT `a`\n"
         + "FROM (SELECT 1 `a`, 'x ' `b`\n"
         + "UNION ALL\n"
-        + "SELECT 2 `a`, 'yy' `b`)";
+        + "SELECT 2 `a`, 'yy' `b`) `t`";
     final String expectedBigQuery = "SELECT a\n"
         + "FROM (SELECT 1 AS a, 'x ' AS b\n"
         + "UNION ALL\n"
@@ -6564,7 +6730,7 @@ class RelToSqlConverterTest {
         + "       lateral (select d.\"department_id\" + 1 as d_plusOne"
         + "                from (values(true)))";
 
-    final String expected = "SELECT \"$cor0\".\"department_id\", \"$cor0\".\"D_PLUSONE\"\n"
+    final String expected = "SELECT \"$cor0\".\"department_id\", \"t1\".\"D_PLUSONE\"\n"
         + "FROM (SELECT \"department_id\", \"department_description\", \"department_id\" + 1 AS \"$f2\"\n"
         + "FROM \"foodmart\".\"department\") AS \"$cor0\",\n"
         + "LATERAL (SELECT \"$cor0\".\"$f2\" AS \"D_PLUSONE\"\n"
@@ -7622,6 +7788,83 @@ class RelToSqlConverterTest {
         .withOracle().ok(expected)
         .withOracle(19).ok(expected)
         .withOracle(11).throws_("Lower Oracle version(<12) doesn't support offset/fetch syntax!");
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6482">[CALCITE-6482]
+   * Oracle dialect convert boolean literal when version < 23</a>. */
+  @Test void testBoolLiteralOracle() {
+    String query = "SELECT \"e1\".\"department_id\" "
+        + "FROM \"employee\" \"e1\""
+        + "LEFT JOIN \"employee\" \"e2\""
+        + "ON TRUE";
+    String expectedVersionLow = "SELECT \"employee\".\"department_id\"\n"
+        + "FROM \"foodmart\".\"employee\"\n"
+        + "LEFT JOIN \"foodmart\".\"employee\" \"employee0\" "
+        + "ON (1 = 1)";
+    String expectedVersionHigh = "SELECT \"employee\".\"department_id\"\n"
+        + "FROM \"foodmart\".\"employee\"\n"
+        + "LEFT JOIN \"foodmart\".\"employee\" \"employee0\" "
+        + "ON TRUE";
+    sql(query)
+        .withOracle(23).ok(expectedVersionHigh)
+        .withOracle(11).ok(expectedVersionLow);
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6480">[CALCITE-6480]
+   * OracleDialect does not support CASE WHEN returning boolean</a>. */
+  @Test void testBooleanCaseWhenOracle() {
+    String query0 = "SELECT \"e1\".\"department_id\" "
+        + "FROM \"employee\" \"e1\""
+        + "LEFT JOIN \"employee\" \"e2\""
+        + "ON CASE WHEN \"e2\".\"employee_id\" = 'a' "
+        + "THEN \"e1\".\"department_id\" > 10 "
+        + "WHEN \"e2\".\"employee_id\" = 'b' "
+        + "THEN \"e1\".\"department_id\" > 20 "
+        + "ELSE \"e2\".\"employee_id\" = 'c' END";
+    String expectedVersionLow0 = "SELECT \"employee\".\"department_id\"\n"
+        + "FROM \"foodmart\".\"employee\"\n"
+        + "LEFT JOIN \"foodmart\".\"employee\" \"employee0\" "
+        + "ON CASE WHEN \"employee0\".\"employee_id\" = 'a' "
+        + "THEN CASE WHEN \"employee\".\"department_id\" > 10 "
+        + "THEN 1 ELSE 0 END WHEN \"employee0\".\"employee_id\" = 'b' "
+        + "THEN CASE WHEN \"employee\".\"department_id\" > 20 "
+        + "THEN 1 ELSE 0 END ELSE CASE WHEN \"employee0\".\"employee_id\" = 'c' "
+        + "THEN 1 ELSE 0 END END = 1";
+    String expectedVersionHigh0 = "SELECT \"employee\".\"department_id\"\n"
+        + "FROM \"foodmart\".\"employee\"\n"
+        + "LEFT JOIN \"foodmart\".\"employee\" \"employee0\" "
+        + "ON CASE WHEN \"employee0\".\"employee_id\" = 'a' "
+        + "THEN \"employee\".\"department_id\" > 10 "
+        + "WHEN \"employee0\".\"employee_id\" = 'b' "
+        + "THEN \"employee\".\"department_id\" > 20"
+        + " ELSE \"employee0\".\"employee_id\" = 'c' END";
+
+    String query1 = "SELECT \"department_id\" "
+        + "FROM \"employee\""
+        + "WHERE CASE \"employee_id\" "
+        + "WHEN 'a' THEN \"department_id\" > 10 "
+        + "WHEN 'b' THEN \"department_id\" > 20 "
+        + "ELSE TRUE END";
+    String expectedVersionLow1 = "SELECT \"department_id\"\n"
+        + "FROM \"foodmart\".\"employee\"\n"
+        + "WHERE CASE WHEN \"employee_id\" = 'a' THEN CASE WHEN \"department_id\" > 10 THEN 1 ELSE 0 END "
+        + "WHEN \"employee_id\" = 'b' THEN CASE WHEN \"department_id\" > 20 THEN 1 ELSE 0 END ELSE "
+        + "CASE WHEN (1 = 1) THEN 1 ELSE 0 END END = 1";
+    String expectedVersionHigh1 = "SELECT \"department_id\"\n"
+        + "FROM \"foodmart\".\"employee\"\n"
+        + "WHERE CASE WHEN \"employee_id\" = 'a' THEN \"department_id\" > 10 "
+        + "WHEN \"employee_id\" = 'b' THEN \"department_id\" > 20 "
+        + "ELSE TRUE END";
+
+    sql(query0)
+        .withOracle(23).ok(expectedVersionHigh0)
+        .withOracle(11).ok(expectedVersionLow0);
+
+    sql(query1)
+        .withOracle(23).ok(expectedVersionHigh1)
+        .withOracle(11).ok(expectedVersionLow1);
   }
 
   /** Test case for

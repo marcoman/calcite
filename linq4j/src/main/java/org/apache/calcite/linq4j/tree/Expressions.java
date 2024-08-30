@@ -35,6 +35,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -550,6 +551,15 @@ public abstract class Expressions {
    * properties set to the specified values.
    */
   public static ConstantExpression constant(@Nullable Object value, Type type) {
+    return constant(value, type, RoundingMode.DOWN);
+  }
+
+  /**
+   * Creates a ConstantExpression that has the Value 、Type 、RoundingMode
+   * properties set to the specified values.
+   */
+  public static ConstantExpression constant(@Nullable Object value, Type type,
+      RoundingMode roundingMode) {
     if (value != null && type instanceof Class) {
       // Fix up value so that it matches type.
       Class<?> clazz = (Class<?>) type;
@@ -572,7 +582,7 @@ public abstract class Expressions {
         if (primitive != null) {
           if (value instanceof Number) {
             Number valueNumber = (Number) value;
-            value = primitive.numberValue(valueNumber);
+            value = primitive.numberValue(valueNumber, roundingMode);
             if (value == null) {
               value = primitive.parse(stringValue);
             }
@@ -622,49 +632,8 @@ public abstract class Expressions {
    * operation that throws an exception if the target type is
    * overflowed.
    */
-  public static Expression convertChecked(Expression expression,
-      Type type) {
-    if (type == Byte.class
-            || type == Short.class
-            || type == Integer.class
-            || type == Long.class) {
-      Class<?> typeClass = (Class<?>) type;
-
-      Object minValue;
-      Object maxValue;
-
-      try {
-        minValue = typeClass.getField("MIN_VALUE").get(null);
-        maxValue = typeClass.getField("MAX_VALUE").get(null);
-      } catch (IllegalAccessException | NoSuchFieldException e) {
-        throw new RuntimeException(e);
-      }
-
-      ThrowStatement throwStmt =
-          Expressions.throw_(
-              Expressions.new_(
-                IllegalArgumentException.class,
-                Expressions.constant("value is outside the range of " + typeClass.getName())));
-
-      // Covers all lower precision types
-      Expression longValue = Expressions.call(expression, "longValue");
-
-      Expression minCheck = Expressions.lessThan(longValue, Expressions.constant(minValue));
-      Expression maxCheck = Expressions.greaterThan(longValue, Expressions.constant(maxValue));
-
-      Primitive primitive = requireNonNull(Primitive.ofBox(type));
-      String primitiveName = requireNonNull(primitive.primitiveName);
-      Expression convertExpr = Expressions.call(expression, primitiveName + "Value");
-
-      return Expressions.convert_(
-          Expressions.makeTernary(
-            ExpressionType.Conditional,
-            Expressions.or(minCheck, maxCheck),
-            Expressions.fromStatement(throwStmt),
-            convertExpr), type);
-    }
-
-    throw new IllegalArgumentException("Type " + type.getTypeName() + " is not supported yet");
+  public static Expression convertChecked(Expression expression, Type type) {
+    return new UnaryExpression(ExpressionType.ConvertChecked, type, expression);
   }
 
   /**
@@ -1480,6 +1449,13 @@ public abstract class Expressions {
       return expression;
     }
     return box(expression, primitive);
+  }
+
+  /** Returns an expression to unbox the value of a boxed-primitive expression exactly.
+   * E.g. {@code unboxExact(e, Primitive.INT)} returns {@code e.intValueExact()}.
+   * It is assumed that e is of the right box type (or {@link Number})."Value */
+  public static Expression unboxExact(Expression expression, Primitive primitive) {
+    return call(expression, requireNonNull(primitive.primitiveName) + "ValueExact");
   }
 
   /** Returns an expression to unbox the value of a boxed-primitive expression.

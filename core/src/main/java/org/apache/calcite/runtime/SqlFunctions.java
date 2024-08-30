@@ -31,6 +31,7 @@ import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.linq4j.function.Deterministic;
 import org.apache.calcite.linq4j.function.Experimental;
 import org.apache.calcite.linq4j.function.Function1;
+import org.apache.calcite.linq4j.function.Functions;
 import org.apache.calcite.linq4j.function.NonDeterministic;
 import org.apache.calcite.linq4j.function.Predicate1;
 import org.apache.calcite.linq4j.tree.Primitive;
@@ -135,6 +136,7 @@ import static org.apache.calcite.util.Static.RESOURCE;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static java.util.Objects.requireNonNull;
+import static java.util.stream.Collectors.joining;
 
 /**
  * Helper methods to implement SQL functions in generated code.
@@ -630,6 +632,11 @@ public class SqlFunctions {
       return matchIndex;
     }
 
+    /** SQL {@code REGEXP_REPLACE} function with 2 arguments. */
+    public String regexpReplace(String s, String regex) {
+      return regexpReplace(s, regex, "", 1, 0, null);
+    }
+
     /** SQL {@code REGEXP_REPLACE} function with 3 arguments. */
     public String regexpReplace(String s, String regex,
         String replacement) {
@@ -642,10 +649,16 @@ public class SqlFunctions {
       return regexpReplace(s, regex, replacement, pos, 0, null);
     }
 
-    /** SQL {@code REGEXP_REPLACE} function with 5 arguments. */
+    /** SQL {@code REGEXP_REPLACE} function with 5 arguments. Last argument is occurrence. */
     public String regexpReplace(String s, String regex, String replacement,
         int pos, int occurrence) {
       return regexpReplace(s, regex, replacement, pos, occurrence, null);
+    }
+
+    /** SQL {@code REGEXP_REPLACE} function with 5 arguments. Last argument is match type */
+    public String regexpReplace(String s, String regex, String replacement,
+        int pos, String matchType) {
+      return regexpReplace(s, regex, replacement, pos, 0, matchType);
     }
 
     /** SQL {@code REGEXP_REPLACE} function with 6 arguments. */
@@ -659,6 +672,18 @@ public class SqlFunctions {
       final Pattern pattern = cache.getUnchecked(new Key(flags, regex));
 
       return Unsafe.regexpReplace(s, pattern, replacement, pos, occurrence);
+    }
+
+    /** SQL {@code REGEXP_REPLACE} function for PostgreSQL with 3 arguments. */
+    public String regexpReplacePg(String s, String regex, String replacement) {
+      return regexpReplace(s, regex, replacement, 1, 1, null);
+    }
+
+    /** SQL {@code REGEXP_REPLACE} function for PostgreSQL with 4 arguments. */
+    public String regexpReplacePg(String s, String regex, String replacement, String matchType) {
+      // Translate g flag to occurrence
+      final int occurrence = matchType.contains("g") ? 0 : 1;
+      return regexpReplace(s, regex, replacement, 1, occurrence, matchType);
     }
 
     /** SQL {@code REGEXP_REPLACE} function with 3 arguments with
@@ -703,6 +728,10 @@ public class SqlFunctions {
           // This flag is in PostgreSQL but doesn't apply to other libraries. This is relaxed
           // for consistency.
           flags &= ~Pattern.DOTALL;
+          break;
+        case 'g':
+          // This flag is in PostgreSQL but doesn't apply to other libraries. Skip here since
+          // this is actually occurrence.
           break;
         default:
           throw RESOURCE.invalidInputForRegexpReplace(stringFlags).ex();
@@ -967,7 +996,7 @@ public class SqlFunctions {
   public static boolean containsSubstr(Object expr, String substr) {
     expr = normalize(expr.toString());
     substr = normalize(substr);
-    if (JsonFunctions.isJsonObject(expr.toString())) {
+    if (Boolean.TRUE.equals(JsonFunctions.isJsonObject(expr.toString()))) {
       return containsSubstr(expr.toString(), substr, "JSON_VALUES");
     }
     return ((String) expr).contains(substr);
@@ -997,18 +1026,6 @@ public class SqlFunctions {
     return s;
   }
 
-  /** SQL SUBSTRING(string FROM ...) function. */
-  public static String substring(String c, int s) {
-    if (s <= 1) {
-      return c;
-    }
-    if (s > c.length()) {
-      return "";
-    }
-    final int s0 = s - 1;
-    return c.substring(s0);
-  }
-
   // Clamp very large long values to integer values.
   // Used by the substring functions.
   // Java strings do not support long indexes anyway,
@@ -1023,6 +1040,18 @@ public class SqlFunctions {
       return Integer.MAX_VALUE;
     }
     return (int) s;
+  }
+
+  /** SQL SUBSTRING(string FROM ...) function. */
+  public static String substring(String c, int s) {
+    if (s <= 1) {
+      return c;
+    }
+    if (s > c.length()) {
+      return "";
+    }
+    final int s0 = s - 1;
+    return c.substring(s0);
   }
 
   public static String substring(String c, long s) {
@@ -1047,15 +1076,39 @@ public class SqlFunctions {
   }
 
   public static String substring(String c, int s, long l) {
-    return substring(c, s, clamp(l));
+    if (s < 0) {
+      if (l > 0 && l + s > 0) {
+        l += s;
+        return substring(c, 0, l);
+      }
+    }
+    int l0 = clamp(l);
+    return SqlFunctions.substring(c, s, l0);
   }
 
   public static String substring(String c, long s, int l) {
-    return substring(c, clamp(s), l);
+    if (s < 0) {
+      s += l;
+      if (s > 0) {
+        return substring(c, 0, s);
+      } else {
+        return "";
+      }
+    }
+    int s0 = clamp(s);
+    return SqlFunctions.substring(c, s0, l);
   }
 
   public static String substring(String c, long s, long l) {
-    return substring(c, clamp(s), clamp(l));
+    if (s < 0) {
+      if (l > 0) {
+        l += s;
+        return substring(c, 0, clamp(l));
+      }
+    }
+    int s0 = clamp(s);
+    int l0 = clamp(l);
+    return SqlFunctions.substring(c, s0, l0);
   }
 
   /** SQL SUBSTRING(binary FROM ...) function for binary. */
@@ -1513,6 +1566,34 @@ public class SqlFunctions {
   public static String concatMultiWithSeparator(String... args) {
     // the separator arg could be null
     final String sep = args[0] == null ? "" : args[0];
+    return concatMultiWithSeparator(sep, args);
+  }
+
+
+  /** SQL {@code CONCAT_WS(sep[, str | array(str)]+)} function,
+   * return null for null sep. */
+  public static String concatMultiTypeWithSeparator(String sep, Object... args) {
+    if (args.length == 0) {
+      return "";
+    }
+    Object[] argsArray = array(args);
+    List<String> arrayList = new ArrayList<>();
+    arrayList.add(sep);
+    for (Object arg : argsArray) {
+      if (arg == null) {
+        continue;
+      }
+      if (arg instanceof String) {
+        arrayList.add((String) arg);
+      }
+      if (arg instanceof List<?>) {
+        arrayList.addAll((List<String>) arg);
+      }
+    }
+    return concatMultiWithSeparator(sep, arrayList.toArray(new String[0]));
+  }
+
+  private static String concatMultiWithSeparator(String sep, String... args) {
     StringBuilder sb = new StringBuilder();
     for (int i = 1; i < args.length; i++) {
       if (args[i] != null) {
@@ -1525,6 +1606,18 @@ public class SqlFunctions {
       }
     }
     return sb.toString();
+  }
+
+  /** SQL {@code CONCAT_WS(sep[, any]+)} function,
+   * return null for null sep. */
+  public static String concatMultiObjectWithSeparator(String sep, Object... args) {
+    if (args.length == 0) {
+      return "";
+    }
+    return Arrays.stream(args)
+        .filter(Objects::nonNull)
+        .map(Object::toString)
+        .collect(joining(sep));
   }
 
   /** SQL {@code CONVERT(s, src_charset, dest_charset)} function. */
@@ -2012,6 +2105,14 @@ public class SqlFunctions {
     return b0 < b1;
   }
 
+  public static boolean lt(List<?> b0, List<?> b1) {
+    return Functions.compareLists(b0, b1) < 0;
+  }
+
+  public static boolean lt(Object[] b0, Object[] b1) {
+    return Functions.compareObjectArrays(b0, b1) < 0;
+  }
+
   /** SQL <code>&lt;</code> operator applied to Object values. */
   public static boolean ltAny(Object b0, Object b1) {
     if (b0.getClass().equals(b1.getClass())
@@ -2050,6 +2151,16 @@ public class SqlFunctions {
   /** SQL <code>&le;</code> operator applied to BigDecimal values. */
   public static boolean le(BigDecimal b0, BigDecimal b1) {
     return b0.compareTo(b1) <= 0;
+  }
+
+  /** SQL <code>&le;</code> operator applied to List values. */
+  public static boolean le(List<?> b0, List<?> b1) {
+    return Functions.compareLists(b0, b1) <= 0;
+  }
+
+  /** SQL <code>&le;</code> operator applied to Object[] values. */
+  public static boolean le(Object[] b0, Object[] b1) {
+    return Functions.compareObjectArrays(b0, b1) <= 0;
   }
 
   /** SQL <code>&le;</code> operator applied to Object values (at least one
@@ -2127,6 +2238,14 @@ public class SqlFunctions {
     return b0 > b1;
   }
 
+  public static boolean gt(List<?> b0, List<?> b1) {
+    return Functions.compareLists(b0, b1) > 0;
+  }
+
+  public static boolean gt(Object[] b0, Object[] b1) {
+    return Functions.compareObjectArrays(b0, b1) > 0;
+  }
+
   /** SQL <code>&gt;</code> operator applied to Object values (at least one
    * operand has ANY type; neither may be null). */
   public static boolean gtAny(Object b0, Object b1) {
@@ -2166,6 +2285,16 @@ public class SqlFunctions {
   /** SQL <code>&ge;</code> operator applied to BigDecimal values. */
   public static boolean ge(BigDecimal b0, BigDecimal b1) {
     return b0.compareTo(b1) >= 0;
+  }
+
+  /** SQL <code>&ge;</code> operator applied to List values. */
+  public static boolean ge(List<?> b0, List<?> b1) {
+    return Functions.compareLists(b0, b1) >= 0;
+  }
+
+  /** SQL <code>&ge;</code> operator applied to Object[] values. */
+  public static boolean ge(Object[] b0, Object[] b1) {
+    return Functions.compareObjectArrays(b0, b1) >= 0;
   }
 
   /** SQL <code>&ge;</code> operator applied to Object values (at least one
@@ -2785,40 +2914,66 @@ public class SqlFunctions {
     return Math.pow(b0.doubleValue(), b1.doubleValue());
   }
 
-
   // LN, LOG, LOG10, LOG2
 
-  /** SQL {@code LOG(number, number2)} function applied to double values. */
-  public static double log(double d0, double d1) {
-    return Math.log(d0) / Math.log(d1);
+  /**
+   * SQL {@code LOG(number, base)} function applied to double values.
+   *
+   * @param nonPositiveIsNull if true return null for non-positive values
+   */
+  public static @Nullable Double log(double number, double base, boolean nonPositiveIsNull) {
+    if (nonPositiveIsNull && number <= 0) {
+      return null;
+    }
+    if (number <= 0 || base <= 0) {
+      throw new IllegalArgumentException("Cannot take logarithm of zero or negative number");
+    }
+    return Math.log(number) / Math.log(base);
   }
 
-  /** SQL {@code LOG(number, number2)} function applied to
-   * double and BigDecimal values. */
-  public static double log(double d0, BigDecimal d1) {
-    return Math.log(d0) / Math.log(d1.doubleValue());
+  /** SQL {@code LOG(number, base)} function applied to
+   * double and BigDecimal values.
+   *
+   * @param nonPositiveIsNull if true return null for non-positive values
+   */
+  public static @Nullable Double log(double number, BigDecimal base, boolean nonPositiveIsNull) {
+    if (nonPositiveIsNull && number <= 0) {
+      return null;
+    }
+    if (number <= 0 || base.doubleValue() <= 0) {
+      throw new IllegalArgumentException("Cannot take logarithm of zero or negative number");
+    }
+    return  Math.log(number) / Math.log(base.doubleValue());
   }
 
-  /** SQL {@code LOG(number, number2)} function applied to
-   * BigDecimal and double values. */
-  public static double log(BigDecimal d0, double d1) {
-    return Math.log(d0.doubleValue()) / Math.log(d1);
+  /** SQL {@code LOG(number, base)} function applied to
+   * BigDecimal and double values.
+   *
+   * @param nonPositiveIsNull if true return null for non-positive values
+   */
+  public static @Nullable Double log(BigDecimal number, double base, Boolean nonPositiveIsNull) {
+    if (nonPositiveIsNull && number.doubleValue() <= 0) {
+      return null;
+    }
+    if (number.doubleValue() <= 0 || base <= 0) {
+      throw new IllegalArgumentException("Cannot take logarithm of zero or negative number");
+    }
+    return Math.log(number.doubleValue()) / Math.log(base);
   }
 
-  /** SQL {@code LOG(number, number2)} function applied to double values. */
-  public static double log(BigDecimal d0, BigDecimal d1) {
-    return Math.log(d0.doubleValue()) / Math.log(d1.doubleValue());
-  }
-
-  /** SQL {@code LOG2(number)} function applied to double values. */
-  public static @Nullable Double log2(double number) {
-    return (number <= 0) ? null : log(number, 2);
-  }
-
-  /** SQL {@code LOG2(number)} function applied to
-   * BigDecimal values. */
-  public static @Nullable Double log2(BigDecimal number) {
-    return log2(number.doubleValue());
+  /** SQL {@code LOG(number, base)} function applied to double values.
+   *
+   * @param nonPositiveIsNull if true return null for non-positive values
+   */
+  public static @Nullable Double log(BigDecimal number, BigDecimal base,
+      Boolean nonPositiveIsNull) {
+    if (nonPositiveIsNull && number.doubleValue() <= 0) {
+      return null;
+    }
+    if (number.doubleValue() <= 0 || base.doubleValue() <= 0) {
+      throw new IllegalArgumentException("Cannot take logarithm of zero or negative number");
+    }
+    return Math.log(number.doubleValue()) / Math.log(base.doubleValue());
   }
 
   // MOD
@@ -3024,6 +3179,20 @@ public class SqlFunctions {
     return Math.acos(b0);
   }
 
+  // ACOSD
+  /** SQL <code>ACOSD</code> operator applied to BigDecimal values. */
+  public static double acosd(BigDecimal b0) {
+    return acosd(b0.doubleValue());
+  }
+
+  /** SQL <code>ACOSD</code> operator applied to double values. */
+  public static double acosd(double b0) {
+    if (b0 < -1.0 || b0 > 1.0) {
+      throw new IllegalArgumentException("input is out of range");
+    }
+    return Math.toDegrees(Math.acos(b0));
+  }
+
   // ACOSH
   /** SQL <code>ACOSH</code> operator applied to BigDecimal values. */
   public static double acosh(BigDecimal b0) {
@@ -3047,6 +3216,20 @@ public class SqlFunctions {
   /** SQL <code>ASIN</code> operator applied to double values. */
   public static double asin(double b0) {
     return Math.asin(b0);
+  }
+
+  // ASIND
+  /** SQL <code>ASIND</code> operator applied to BigDecimal values. */
+  public static double asind(BigDecimal b0) {
+    return asind(b0.doubleValue());
+  }
+
+  /** SQL <code>ASIND</code> operator applied to double values. */
+  public static double asind(double b0) {
+    if (b0 < -1.0 || b0 > 1.0) {
+      throw new IllegalArgumentException("input is out of range");
+    }
+    return Math.toDegrees(Math.asin(b0));
   }
 
   // ASINH
@@ -3077,6 +3260,21 @@ public class SqlFunctions {
   /** SQL <code>ATAN</code> operator applied to double values. */
   public static double atan(double b0) {
     return Math.atan(b0);
+  }
+
+  // ATAND
+  /** SQL <code>ATAN</code> operator applied to BigDecimal values. */
+  public static double atand(BigDecimal b0) {
+    return atand(b0.doubleValue());
+  }
+
+  /** SQL <code>ATAND</code> operator applied to double values. */
+  public static double atand(double b0) {
+    if (Double.isNaN(b0)) {
+      return Double.NaN;
+    } else {
+      return Math.toDegrees(Math.atan(b0));
+    }
   }
 
   // ATAN2
@@ -3142,6 +3340,21 @@ public class SqlFunctions {
   /** SQL <code>COS</code> operator applied to double values. */
   public static double cos(double b0) {
     return Math.cos(b0);
+  }
+
+  // COSD
+  /** SQL <code>COSD</code> operator applied to BigDecimal values. */
+  public static double cosd(BigDecimal b0) {
+    return cosd(b0.doubleValue());
+  }
+
+  /** SQL <code>COSD</code> operator applied to double values. */
+  public static double cosd(double b0) {
+    if (Double.isInfinite(b0)) {
+      throw new IllegalArgumentException("input is out of range");
+    } else {
+      return Math.cos(Math.toRadians(b0));
+    }
   }
 
   // COSH
@@ -3368,6 +3581,21 @@ public class SqlFunctions {
     return Math.sin(b0);
   }
 
+  // SIND
+  /** SQL <code>SIND</code> operator applied to BigDecimal values. */
+  public static double sind(BigDecimal b0) {
+    return sind(b0.doubleValue());
+  }
+
+  /** SQL <code>SIND</code> operator applied to double values. */
+  public static double sind(double b0) {
+    if (Double.isInfinite(b0)) {
+      throw new IllegalArgumentException("input is out of range");
+    } else {
+      return Math.sin(Math.toRadians(b0));
+    }
+  }
+
   // SINH
   /** SQL <code>SINH</code> operator applied to BigDecimal values. */
   public static double sinh(BigDecimal b) {
@@ -3388,6 +3616,21 @@ public class SqlFunctions {
   /** SQL <code>TAN</code> operator applied to double values. */
   public static double tan(double b0) {
     return Math.tan(b0);
+  }
+
+  // TAND
+  /** SQL <code>TAND</code> operator applied to BigDecimal values. */
+  public static double tand(BigDecimal b0) {
+    return tand(b0.doubleValue());
+  }
+
+  /** SQL <code>TAND</code> operator applied to double values. */
+  public static double tand(double b0) {
+    if (Double.isInfinite(b0)) {
+      throw new IllegalArgumentException("input is out of range");
+    } else {
+      return Math.tan(Math.toRadians(b0));
+    }
   }
 
   // TANH
@@ -4004,6 +4247,20 @@ public class SqlFunctions {
    * {@code FORMAT_DATETIME}, {@code FORMAT_TIME}, {@code TO_CHAR} functions. */
   @Deterministic
   public static class DateFormatFunction {
+    // Timezone to use for PostgreSQL parsing of timestamps
+    private static final ZoneId LOCAL_ZONE;
+    static {
+      ZoneId zoneId;
+      try {
+        // Currently the parsed timestamps are expected to be the number of
+        // milliseconds since the epoch in UTC, with no timezone information
+        zoneId = ZoneId.of("UTC");
+      } catch (Exception e) {
+        zoneId = ZoneId.systemDefault();
+      }
+      LOCAL_ZONE = zoneId;
+    }
+
     /** Work space for various functions. Clear it before you use it. */
     final StringBuilder sb = new StringBuilder();
 
@@ -4061,9 +4318,38 @@ public class SqlFunctions {
           new java.sql.Date(internalToDateTime(dateString, fmtString)));
     }
 
+    public int toDatePg(String dateString, String fmtString) {
+      try {
+        return (int) PostgresqlDateTimeFormatter.toTimestamp(dateString, fmtString,
+                LOCAL_ZONE)
+            .getLong(ChronoField.EPOCH_DAY);
+      } catch (Exception e) {
+        SQLException sqlEx =
+            new SQLException(
+                String.format(Locale.ROOT,
+                    "Invalid format: '%s' for datetime string: '%s'.", fmtString,
+                    dateString));
+        throw Util.toUnchecked(sqlEx);
+      }
+    }
+
     public long toTimestamp(String timestampString, String fmtString) {
       return toLong(
           new java.sql.Timestamp(internalToDateTime(timestampString, fmtString)));
+    }
+
+    public long toTimestampPg(String timestampString, String fmtString) {
+      try {
+        return PostgresqlDateTimeFormatter.toTimestamp(timestampString, fmtString, LOCAL_ZONE)
+            .toInstant().toEpochMilli();
+      } catch (Exception e) {
+        SQLException sqlEx =
+            new SQLException(
+                String.format(Locale.ROOT,
+                    "Invalid format: '%s' for timestamp string: '%s'.", fmtString,
+                    timestampString));
+        throw Util.toUnchecked(sqlEx);
+      }
     }
 
     private long internalToDateTime(String dateString, String fmtString) {

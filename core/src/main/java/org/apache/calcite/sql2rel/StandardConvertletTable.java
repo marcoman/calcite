@@ -193,7 +193,9 @@ public class StandardConvertletTable extends ReflectiveConvertletTable {
         new TrimConvertlet(SqlTrimFunction.Flag.TRAILING));
 
     registerOp(SqlLibraryOperators.GREATEST, new GreatestConvertlet());
+    registerOp(SqlLibraryOperators.GREATEST_PG, new GreatestPgConvertlet());
     registerOp(SqlLibraryOperators.LEAST, new GreatestConvertlet());
+    registerOp(SqlLibraryOperators.LEAST_PG, new GreatestPgConvertlet());
     registerOp(SqlLibraryOperators.SUBSTR_BIG_QUERY,
         new SubstrConvertlet(SqlLibrary.BIG_QUERY));
     registerOp(SqlLibraryOperators.SUBSTR_MYSQL,
@@ -204,6 +206,8 @@ public class StandardConvertletTable extends ReflectiveConvertletTable {
         new SubstrConvertlet(SqlLibrary.POSTGRESQL));
 
     registerOp(SqlLibraryOperators.DATE_ADD,
+        new TimestampAddConvertlet());
+    registerOp(SqlLibraryOperators.ADD_MONTHS,
         new TimestampAddConvertlet());
     registerOp(SqlLibraryOperators.DATE_DIFF,
         new TimestampDiffConvertlet());
@@ -279,6 +283,11 @@ public class StandardConvertletTable extends ReflectiveConvertletTable {
     // "AS" has no effect, so expand "x AS id" into "x".
     registerOp(SqlStdOperatorTable.AS,
         (cx, call) -> cx.convertExpression(call.operand(0)));
+
+    // "MEASURE" has no effect, so expand "x AS MEASURE id" into "x".
+    registerOp(SqlInternalOperators.MEASURE,
+        (cx, call) -> cx.convertExpression(call.operand(0)));
+
     registerOp(SqlStdOperatorTable.CONVERT, this::convertCharset);
     registerOp(SqlStdOperatorTable.TRANSLATE, this::translateCharset);
     // "SQRT(x)" is equivalent to "POWER(x, .5)"
@@ -1900,6 +1909,60 @@ public class StandardConvertletTable extends ReflectiveConvertletTable {
     }
   }
 
+  /** Convertlet that converts {@code GREATEST} and {@code LEAST}. */
+  private static class GreatestPgConvertlet implements SqlRexConvertlet {
+    @Override public RexNode convertCall(SqlRexContext cx, SqlCall call) {
+      // Translate
+      //   GREATEST(a, b, c, d)
+      // to
+      //   CASE
+      //   WHEN a IS NOT NULL AND (b IS NULL OR a > b) AND (c IS NULL OR a > c) AND
+      //        (d IS NULL OR a > d)
+      //   THEN a
+      //   WHEN b IS NOT NULL AND (c IS NULL OR b > c) AND (d IS NULL OR b > d)
+      //   THEN b
+      //   WHEN C IS NOT NULL AND (d IS NULL OR c > d)
+      //   THEN c
+      //   WHEN d IS NOT NULL
+      //   THEN d
+      //   ELSE NULL
+      //   END
+      final RexBuilder rexBuilder = cx.getRexBuilder();
+      final RelDataType type =
+          cx.getValidator().getValidatedNodeType(call);
+      final SqlBinaryOperator op;
+      switch (call.getKind()) {
+      case GREATEST_PG:
+        op = SqlStdOperatorTable.GREATER_THAN;
+        break;
+      case LEAST_PG:
+        op = SqlStdOperatorTable.LESS_THAN;
+        break;
+      default:
+        throw new AssertionError();
+      }
+      final List<RexNode> exprs =
+          convertOperands(cx, call, SqlOperandTypeChecker.Consistency.NONE);
+      final List<RexNode> list = new ArrayList<>();
+      for (int i = 0; i < exprs.size(); i++) {
+        RexNode expr = exprs.get(i);
+        final List<RexNode> andList = new ArrayList<>();
+        andList.add(rexBuilder.makeCall(SqlStdOperatorTable.IS_NOT_NULL, expr));
+        for (int j = i + 1; j < exprs.size(); j++) {
+          final RexNode expr2 = exprs.get(j);
+          final List<RexNode> orList = new ArrayList<>();
+          orList.add(rexBuilder.makeCall(SqlStdOperatorTable.IS_NULL, expr2));
+          orList.add(rexBuilder.makeCall(op, expr, expr2));
+          andList.add(RexUtil.composeDisjunction(rexBuilder, orList));
+        }
+        list.add(RexUtil.composeConjunction(rexBuilder, andList));
+        list.add(expr);
+      }
+      list.add(rexBuilder.makeNullLiteral(type));
+      return rexBuilder.makeCall(type, SqlStdOperatorTable.CASE, list);
+    }
+  }
+
   /** Convertlet that handles {@code FLOOR} and {@code CEIL} functions. */
   private class FloorCeilConvertlet implements SqlRexConvertlet {
     @Override public RexNode convertCall(SqlRexContext cx, SqlCall call) {
@@ -2079,11 +2142,41 @@ public class StandardConvertletTable extends ReflectiveConvertletTable {
       final RexNode op2;
       switch (call.operandCount()) {
       case 2:
-        // BigQuery-style 'TIMESTAMP_ADD(timestamp, interval)'
-        final SqlBasicCall operandCall = call.operand(1);
-        qualifier  = operandCall.operand(1);
-        op1 = cx.convertExpression(operandCall.operand(0));
-        op2 = cx.convertExpression(call.operand(0));
+        // Oracle-style 'ADD_MONTHS(date, integer months)'
+        if (call.getOperator() == SqlLibraryOperators.ADD_MONTHS) {
+          qualifier = new SqlIntervalQualifier(TimeUnit.MONTH, null, SqlParserPos.ZERO);
+          RexNode opfirstparameter = cx.convertExpression(call.operand(0));
+          if (opfirstparameter.getType().getSqlTypeName() == SqlTypeName.TIMESTAMP) {
+            RelDataType timestampType = cx.getTypeFactory().createSqlType(SqlTypeName.DATE);
+            op2 = rexBuilder.makeCast(timestampType, opfirstparameter);
+          } else {
+            op2 = cx.convertExpression(call.operand(0));
+          }
+
+          RexNode opsecondparameter = cx.convertExpression(call.operand(1));
+          RelDataTypeFactory typeFactory = cx.getTypeFactory();
+
+          // In Calcite, cast('1.2' as integer) is invalid.
+          // For details, see https://issues.apache.org/jira/browse/CALCITE-1439
+          // When trying to cast a string value to an integer type, Calcite may
+          // encounter errors if the string value cannot be successfully converted.
+          // To handle this, the string needs to be first converted to a double type,
+          // and then the double value can be converted to an integer type.
+          // Since the final target type is integer, converting the string to double first
+          // will not lose precision for the add_months operation.
+          if (opsecondparameter.getType().getSqlTypeName() == SqlTypeName.CHAR) {
+            RelDataType doubleType = typeFactory.createSqlType(SqlTypeName.DOUBLE);
+            opsecondparameter = rexBuilder.makeCast(doubleType, opsecondparameter);
+          }
+          RelDataType intType = typeFactory.createSqlType(SqlTypeName.INTEGER);
+          op1 = rexBuilder.makeCast(intType, opsecondparameter);
+        } else {
+          // BigQuery-style 'TIMESTAMP_ADD(timestamp, interval)'
+          final SqlBasicCall operandCall = call.operand(1);
+          qualifier = operandCall.operand(1);
+          op1 = cx.convertExpression(operandCall.operand(0));
+          op2 = cx.convertExpression(call.operand(0));
+        }
         break;
       default:
         // JDBC-style 'TIMESTAMPADD(unit, count, timestamp)'

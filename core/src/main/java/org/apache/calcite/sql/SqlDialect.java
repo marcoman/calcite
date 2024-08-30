@@ -466,6 +466,13 @@ public class SqlDialect {
     }
   }
 
+  public void unparseBoolLiteral(SqlWriter writer,
+      SqlLiteral literal, int leftPrec, int rightPrec) {
+    Object value = literal.getValue();
+    writer.keyword(
+        value == null ? "UNKNOWN" : (Boolean) value ? "TRUE" : "FALSE");
+  }
+
   public void unparseDateTimeLiteral(SqlWriter writer,
       SqlAbstractDateTimeLiteral literal, int leftPrec, int rightPrec) {
     writer.literal(literal.toString());
@@ -774,6 +781,11 @@ public class SqlDialect {
 
   /** Returns whether this dialect supports window functions (OVER clause). */
   public boolean supportsWindowFunctions() {
+    return true;
+  }
+
+  /** Returns whether this dialect supports case when return boolean type. */
+  public boolean supportBooleanCaseWhen() {
     return true;
   }
 

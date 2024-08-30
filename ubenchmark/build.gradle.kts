@@ -20,6 +20,7 @@ plugins {
 
 dependencies {
     jmhImplementation(platform(project(":bom")))
+    jmhImplementation(project(":babel"))
     jmhImplementation(project(":core"))
     jmhImplementation(project(":linq4j"))
     jmhImplementation("com.google.guava:guava")
@@ -46,5 +47,11 @@ tasks.withType<JavaExec>().configureEach {
         // IntelliJ IDEA "execute main method" adds a JavaExec task, so we configure it
         classpath(File(layout.buildDirectory.asFile.get(), "jmh-generated-classes"))
         classpath(File(layout.buildDirectory.asFile.get(), "jmh-generated-resources"))
+    }
+}
+
+if (hasProperty("jmh.includes")) {
+    jmh {
+        includes = listOf(property("jmh.includes") as String)
     }
 }

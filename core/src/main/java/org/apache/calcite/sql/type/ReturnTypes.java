@@ -34,6 +34,8 @@ import org.apache.calcite.sql.validate.SqlValidatorNamespace;
 import org.apache.calcite.util.Glossary;
 import org.apache.calcite.util.Util;
 
+import org.checkerframework.checker.nullness.qual.Nullable;
+
 import java.util.AbstractList;
 import java.util.Arrays;
 import java.util.List;
@@ -177,6 +179,20 @@ public abstract class ReturnTypes {
    */
   public static final SqlReturnTypeInference ARG0_NULLABLE =
       ARG0.andThen(SqlTypeTransforms.TO_NULLABLE);
+
+  /**
+   * Type-inference strategy that determines the return type based on the first argument.
+   * If the first argument is an array, the return type is consistent with {@link #ARG0_NULLABLE}.
+   * If the first argument is not an array,
+   * the return type is consistent with {@link #ARG0_NULLABLE_VARYING}.
+   */
+  public static final SqlReturnTypeInference ARG0_ARRAY_NULLABLE_VARYING = opBinding -> {
+    SqlTypeName op = opBinding.getOperandType(0).getSqlTypeName();
+    if (op == SqlTypeName.ARRAY) {
+      return ARG0_NULLABLE.inferReturnType(opBinding);
+    }
+    return ARG0_NULLABLE_VARYING.inferReturnType(opBinding);
+  };
 
   /**
    * Type-inference strategy whereby the result type of a call is the type of
@@ -392,6 +408,13 @@ public abstract class ReturnTypes {
       TIMESTAMP_LTZ.andThen(SqlTypeTransforms.TO_NULLABLE);
 
   /**
+   * Type-inference strategy whereby the result type of a call is nullable
+   * TIMESTAMP WITH TIME ZONE.
+   */
+  public static final SqlReturnTypeInference TIMESTAMP_TZ_NULLABLE =
+      TIMESTAMP_TZ.andThen(SqlTypeTransforms.TO_NULLABLE);
+
+  /**
    * Type-inference strategy whereby the result type of a call is Double.
    */
   public static final SqlReturnTypeInference DOUBLE =
@@ -549,8 +572,14 @@ public abstract class ReturnTypes {
    * @see Glossary#SQL99 SQL:1999 Part 2 Section 9.3
    */
   public static final SqlReturnTypeInference LEAST_RESTRICTIVE =
-      opBinding -> opBinding.getTypeFactory().leastRestrictive(
-          opBinding.collectOperandTypes());
+      andThen(SqlTypeTransforms.FROM_MEASURE_IF::apply,
+          ReturnTypes::leastRestrictive);
+
+  private static @Nullable RelDataType leastRestrictive(
+      SqlOperatorBinding opBinding) {
+    return opBinding.getTypeFactory()
+        .leastRestrictive(opBinding.collectOperandTypes());
+  }
 
   /**
    * Type-inference strategy for NVL2 function. It returns the least restrictive type
@@ -1372,7 +1401,8 @@ public abstract class ReturnTypes {
     final RelDataType relDataType =
         typeFactory.getTypeSystem().deriveAvgAggType(typeFactory,
             opBinding.getOperandType(0));
-    if (opBinding.getGroupCount() == 0 || opBinding.hasFilter()) {
+    if (opBinding.getGroupCount() == 0 || opBinding.hasFilter()
+        || opBinding.getOperator().kind == SqlKind.STDDEV_SAMP) {
       return typeFactory.createTypeWithNullability(relDataType, true);
     } else {
       return relDataType;
@@ -1391,6 +1421,6 @@ public abstract class ReturnTypes {
     }
   };
 
-  public static final SqlReturnTypeInference PERCENTILE_DISC_CONT = opBinding ->
-      opBinding.getCollationType();
+  public static final SqlReturnTypeInference PERCENTILE_DISC_CONT =
+      SqlOperatorBinding::getCollationType;
 }

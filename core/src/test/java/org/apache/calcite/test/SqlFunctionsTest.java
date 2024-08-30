@@ -44,6 +44,8 @@ import static org.apache.calcite.runtime.SqlFunctions.arraysOverlap;
 import static org.apache.calcite.runtime.SqlFunctions.charLength;
 import static org.apache.calcite.runtime.SqlFunctions.concat;
 import static org.apache.calcite.runtime.SqlFunctions.concatMulti;
+import static org.apache.calcite.runtime.SqlFunctions.concatMultiObjectWithSeparator;
+import static org.apache.calcite.runtime.SqlFunctions.concatMultiTypeWithSeparator;
 import static org.apache.calcite.runtime.SqlFunctions.concatMultiWithNull;
 import static org.apache.calcite.runtime.SqlFunctions.concatMultiWithSeparator;
 import static org.apache.calcite.runtime.SqlFunctions.concatWithNull;
@@ -57,11 +59,13 @@ import static org.apache.calcite.runtime.SqlFunctions.lesser;
 import static org.apache.calcite.runtime.SqlFunctions.lower;
 import static org.apache.calcite.runtime.SqlFunctions.ltrim;
 import static org.apache.calcite.runtime.SqlFunctions.md5;
+import static org.apache.calcite.runtime.SqlFunctions.overlay;
 import static org.apache.calcite.runtime.SqlFunctions.position;
 import static org.apache.calcite.runtime.SqlFunctions.rtrim;
 import static org.apache.calcite.runtime.SqlFunctions.sha1;
 import static org.apache.calcite.runtime.SqlFunctions.sha256;
 import static org.apache.calcite.runtime.SqlFunctions.sha512;
+import static org.apache.calcite.runtime.SqlFunctions.substring;
 import static org.apache.calcite.runtime.SqlFunctions.toBase64;
 import static org.apache.calcite.runtime.SqlFunctions.toInt;
 import static org.apache.calcite.runtime.SqlFunctions.toIntOptional;
@@ -169,6 +173,61 @@ class SqlFunctionsTest {
     assertThat(concat(null, "b"), is("nullb"));
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6433">[CALCITE-6433]
+   * SUBSTRING can return incorrect empty result for some parameters</a>. */
+  @Test void testSubString() {
+    // str vs single param
+    assertThat(substring("string", -1), is("string"));
+    assertThat(substring("string", -1L), is("string"));
+    assertThat(substring("string", 2), is("tring"));
+    assertThat(substring("string", 2L), is("tring"));
+    assertThat(substring("string", Integer.MIN_VALUE), is("string"));
+    assertThat(substring("string", Long.MIN_VALUE), is("string"));
+    assertThat(substring("string", Integer.MIN_VALUE + 10), is("string"));
+    assertThat(substring("string", Integer.MAX_VALUE), is(""));
+    assertThat(substring("string", Long.MAX_VALUE), is(""));
+    assertThat(substring("string", Integer.MAX_VALUE - 10), is(""));
+    assertThat(substring("string", Integer.MIN_VALUE - 10L), is("string"));
+    assertThat(substring("string", Integer.MAX_VALUE + 10L), is(""));
+
+    // str vs multi params
+    assertThat(substring("string", -1, 1), is(""));
+    assertThat(substring("string", -1, 1L), is(""));
+    assertThat(substring("string", -1L, 1), is(""));
+    assertThat(substring("string", -1L, 1L), is(""));
+
+    assertThat(substring("string", 1, 2), is("st"));
+    assertThat(substring("string", 1, 2L), is("st"));
+    assertThat(substring("string", 1L, 2), is("st"));
+    assertThat(substring("string", 1L, 2L), is("st"));
+
+    assertThat(substring("string", -1, 2), is(""));
+    assertThat(substring("string", -1L, 2), is(""));
+    assertThat(substring("string", -1, 2L), is(""));
+    assertThat(substring("string", -1L, 2L), is(""));
+
+    assertThat(substring("string", -1, 3), is("s"));
+    assertThat(substring("string", -1L, 3), is("s"));
+    assertThat(substring("string", -1, 3L), is("s"));
+    assertThat(substring("string", -1L, 3L), is("s"));
+
+    assertThat(substring("string", -10, 12), is("s"));
+    assertThat(substring("string", -10L, 12), is("s"));
+    assertThat(substring("string", -10, 12L), is("s"));
+    assertThat(substring("string", -10L, 12L), is("s"));
+
+    assertThat(substring("string", -1, Integer.MAX_VALUE), is("string"));
+    assertThat(substring("string", -1L, Integer.MAX_VALUE), is("string"));
+    assertThat(substring("string", -1, Long.MAX_VALUE), is("string"));
+
+    assertThat(substring("string", Integer.MIN_VALUE, Integer.MAX_VALUE), is(""));
+    assertThat(substring("string", Integer.MIN_VALUE, Integer.MAX_VALUE + 10L), is("string"));
+    assertThat(substring("string", Long.MIN_VALUE, Integer.MAX_VALUE), is(""));
+    assertThat(substring("string", Integer.MIN_VALUE, Long.MAX_VALUE), is("string"));
+    assertThat(substring("string", Integer.MIN_VALUE - 10L, Long.MAX_VALUE), is("string"));
+  }
+
   @Test void testConcatWithNull() {
     assertThat(concatWithNull("a b", "cd"), is("a bcd"));
     // Null value could be passed in. If we pass one null value,
@@ -209,6 +268,53 @@ class SqlFunctionsTest {
     // The separator could be null, and it is treated as empty string
     assertThat(concatMultiWithSeparator(null, "a", "b", null, "c"), is("abc"));
     assertThat(concatMultiWithSeparator(null, null, null), is(""));
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6446">[CALCITE-6446]
+   * Add CONCAT_WS function (enabled in Spark library)</a>. */
+  @Test void testConcatMultiTypeWithSeparator() {
+    // string type
+    assertThat(concatMultiTypeWithSeparator("a"), is(""));
+    assertThat(concatMultiTypeWithSeparator(",", "a"), is("a"));
+    assertThat(concatMultiTypeWithSeparator(",", "a b", "cd"), is("a b,cd"));
+    assertThat(concatMultiTypeWithSeparator(",", "a b", null, "cd", null, "e"), is("a b,cd,e"));
+    assertThat(concatMultiTypeWithSeparator(",", "", ""), is(","));
+    assertThat(concatMultiTypeWithSeparator("", null, null), is(""));
+    // array type
+    assertThat(concatMultiTypeWithSeparator(",", Arrays.asList()), is(""));
+    assertThat(concatMultiTypeWithSeparator(",", Arrays.asList("a")), is("a"));
+    assertThat(concatMultiTypeWithSeparator(",", Arrays.asList("a", "b")), is("a,b"));
+    assertThat(concatMultiTypeWithSeparator(",", Arrays.asList("a", null, "b")), is("a,b"));
+    assertThat(concatMultiTypeWithSeparator(",", Arrays.asList(null, "b")), is("b"));
+    assertThat(concatMultiTypeWithSeparator(",", Arrays.asList(null, null)), is(""));
+    assertThat(
+        concatMultiTypeWithSeparator(",",
+            Arrays.asList("11", "11"), Arrays.asList("12", "12")), is("11,11,12,12"));
+    // multi type
+    assertThat(concatMultiTypeWithSeparator(",", "11", "11", Arrays.asList("12", "12")),
+        is("11,11,12,12"));
+    assertThat(concatMultiTypeWithSeparator(",", null, "11", Arrays.asList("12", "12")),
+        is("11,12,12"));
+    assertThat(concatMultiTypeWithSeparator(",", "11", null, Arrays.asList("12", "12")),
+        is("11,12,12"));
+    assertThat(
+        concatMultiTypeWithSeparator(",", "11", "11", Arrays.asList("12", "12"),
+            Arrays.asList("13", null, "13")),
+        is("11,11,12,12,13,13"));
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6450">[CALCITE-6450]
+   * Postgres CONCAT_WS function </a>. */
+  @Test void testConcatMultiObjectWithSeparator() {
+    assertThat(concatMultiObjectWithSeparator("a"), is(""));
+    assertThat(concatMultiObjectWithSeparator(",", "a b", "cd"), is("a b,cd"));
+    assertThat(concatMultiObjectWithSeparator(",", "a", 1, Arrays.asList("b", "c")),
+        is("a,1,[b, c]"));
+    assertThat(concatMultiObjectWithSeparator(",", "a", 1, Arrays.asList("b", "c"), null),
+        is("a,1,[b, c]"));
+    assertThat(concatMultiObjectWithSeparator("abc", null, null), is(""));
   }
 
   @Test void testPosixRegex() {
@@ -446,6 +552,7 @@ class SqlFunctionsTest {
 
   @Test void testRegexpReplace() {
     final SqlFunctions.RegexFunction f = new SqlFunctions.RegexFunction();
+    assertThat(f.regexpReplace("abc", "b"), is("ac"));
     assertThat(f.regexpReplace("a b c", "b", "X"), is("a X c"));
     assertThat(f.regexpReplace("abc def ghi", "[g-z]+", "X"), is("abc def X"));
     assertThat(f.regexpReplace("abc def ghi", "[a-z]+", "X"), is("X X X"));
@@ -464,6 +571,11 @@ class SqlFunctionsTest {
         is("abc def GHI"));
     assertThat(f.regexpReplace("abc def GHI", "[a-z]+", "X", 1, 3, "i"),
         is("abc def X"));
+    assertThat(f.regexpReplacePg("abc def GHI", "[a-z]+", "X"), is("X def GHI"));
+    assertThat(f.regexpReplacePg("abc def GHI", "[a-z]+", "X", "g"),
+        is("X X GHI"));
+    assertThat(f.regexpReplacePg("ABC def GHI", "[a-z]+", "X", "i"),
+        is("X def GHI"));
 
     try {
       f.regexpReplace("abc def ghi", "[a-z]+", "X", 0);
@@ -660,6 +772,15 @@ class SqlFunctionsTest {
     assertThat(trimSpacesBoth("   x"), is("x"));
     assertThat(trimSpacesBoth("x"), is("x"));
   }
+
+  /** Test for {@link SqlFunctions#overlay}. */
+  @Test void testOverlay() {
+    assertThat(overlay("HelloWorld", "Java", 6), is("HelloJavad"));
+    assertThat(overlay("Hello World", "World", 1), is("World World"));
+    assertThat(overlay("HelloWorld", "Java", 6, 5), is("HelloJava"));
+    assertThat(overlay("HelloWorld", "Java", 6, 0), is("HelloJavaWorld"));
+  }
+
 
   static String trimSpacesBoth(String s) {
     return trim(true, true, " ", s);

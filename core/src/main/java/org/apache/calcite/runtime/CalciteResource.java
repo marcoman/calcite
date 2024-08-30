@@ -322,7 +322,7 @@ public interface CalciteResource {
   @BaseMessage("Duplicate name ''{0}'' in column alias list")
   ExInst<SqlValidatorException> aliasListDuplicate(String a0);
 
-  @BaseMessage("INNER, LEFT, RIGHT or FULL join requires a condition (NATURAL keyword or ON or USING clause)")
+  @BaseMessage("INNER, LEFT, RIGHT, FULL, or ASOF join requires a condition (NATURAL keyword or ON or USING clause)")
   ExInst<SqlValidatorException> joinRequiresCondition();
 
   @BaseMessage("Cannot qualify common column ''{0}''")
@@ -343,6 +343,12 @@ public interface CalciteResource {
 
   @BaseMessage("OVER clause is necessary for window functions")
   ExInst<SqlValidatorException> absentOverClause();
+
+  @BaseMessage("MEASURE not valid in aggregate or DISTINCT query")
+  ExInst<SqlValidatorException> measureInAggregateQuery();
+
+  @BaseMessage("Measure ''{0}'' is cyclic; its definition depends on the following measures: {1}")
+  ExInst<SqlValidatorException> measureIsCyclic(String measureName, String dependentMeasures);
 
   @BaseMessage("Argument to function ''{0}'' must be a measure")
   ExInst<SqlValidatorException> argumentMustBeMeasure(String functionName);
@@ -409,6 +415,9 @@ public interface CalciteResource {
 
   @BaseMessage("HAVING clause must be a condition")
   ExInst<SqlValidatorException> havingMustBeBoolean();
+
+  @BaseMessage("Window expressions are not permitted in the HAVING clause; use the QUALIFY clause instead")
+  ExInst<SqlValidatorException> windowInHavingNotAllowed();
 
   @BaseMessage("OVER must be applied to aggregate function")
   ExInst<SqlValidatorException> overNonAggregate();
@@ -1099,4 +1108,19 @@ public interface CalciteResource {
 
   @BaseMessage("BIT_GET/GETBIT error: position {0,number} exceeds the bit upper limit {1,number}")
   ExInst<CalciteException> illegalBitGetPositionExceedsLimit(int position, int size);
+
+  @BaseMessage("MATCH_CONDITION only allowed with ASOF JOIN")
+  ExInst<CalciteException> matchConditionRequiresAsof();
+
+  @BaseMessage("ASOF JOIN missing MATCH_CONDITION")
+  ExInst<CalciteException> asofRequiresMatchCondition();
+
+  @BaseMessage("ASOF JOIN MATCH_CONDITION must be a comparison between columns from the two inputs")
+  ExInst<SqlValidatorException> asofMatchMustBeComparison();
+
+  @BaseMessage("ASOF JOIN condition must be a conjunction of equality comparisons")
+  ExInst<SqlValidatorException> asofConditionMustBeComparison();
+
+  @BaseMessage("ASOF JOIN does not support correlated subqueries")
+  ExInst<CalciteException> asofCannotBeCorrelated();
 }

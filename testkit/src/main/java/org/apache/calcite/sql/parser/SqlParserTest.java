@@ -20,6 +20,7 @@ import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlDialect;
 import org.apache.calcite.sql.SqlExplain;
 import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.SqlJoin;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlLambda;
 import org.apache.calcite.sql.SqlLiteral;
@@ -75,6 +76,7 @@ import static org.apache.calcite.util.Util.toLinux;
 
 import static org.hamcrest.CoreMatchers.containsString;
 import static org.hamcrest.CoreMatchers.equalTo;
+import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.not;
 import static org.hamcrest.CoreMatchers.notNullValue;
@@ -85,6 +87,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
+
+import static java.util.Objects.requireNonNull;
 
 /**
  * A <code>SqlParserTest</code> is a unit-test for
@@ -132,6 +136,7 @@ public class SqlParserTest {
       "AS",                            "92", "99", "2003", "2011", "2014", "c",
       "ASC",                           "92", "99",
       "ASENSITIVE",                          "99", "2003", "2011", "2014", "c",
+      "ASOF",                                                              "c",
       "ASSERTION",                     "92", "99",
       "ASYMMETRIC",                          "99", "2003", "2011", "2014", "c",
       "AT",                            "92", "99", "2003", "2011", "2014", "c",
@@ -352,10 +357,12 @@ public class SqlParserTest {
       "MAP",                                 "99",
       "MATCH",                         "92", "99", "2003", "2011", "2014", "c",
       "MATCHES",                                                   "2014", "c",
+      "MATCH_CONDITION",                                                   "c",
       "MATCH_NUMBER",                                              "2014", "c",
       "MATCH_RECOGNIZE",                                           "2014", "c",
       "MAX",                           "92",               "2011", "2014", "c",
       "MAX_CARDINALITY",                                   "2011",
+      "MEASURE",                                                           "c",
       "MEASURES",                                                          "c",
       "MEMBER",                                    "2003", "2011", "2014", "c",
       "MERGE",                                     "2003", "2011", "2014", "c",
@@ -671,6 +678,19 @@ public class SqlParserTest {
         final SqlCall rowCall = valuesCall.operand(0);
         final SqlIdentifier id = rowCall.operand(0);
         return id.isComponentQuoted(i) == quoted;
+      }
+    };
+  }
+
+  /** Returns a {@link Matcher} that calls a consumer and then succeeds.
+   * The consumer should contain custom code, and should fail if it doesn't
+   * like what it sees. */
+  public static Matcher<SqlNode> customMatches(String description,
+      Consumer<SqlNode> consumer) {
+    return new CustomTypeSafeMatcher<SqlNode>(description) {
+      @Override protected boolean matchesSafely(SqlNode sqlNode) {
+        consumer.accept(sqlNode);
+        return true;
       }
     };
   }
@@ -3202,6 +3222,28 @@ public class SqlParserTest {
             + "CROSS JOIN `B`");
   }
 
+  @Test void testJoinCrossComma() {
+    sql("select * from a as a2, b cross join c")
+        .node(
+            customMatches("custom", node -> {
+              // Parsed as left-deep:
+              //   select * from (a as a2, b) cross join c
+              // (This is not valid SQL, but illustrates operator
+              // associativity.)
+              assertThat(node, instanceOf(SqlSelect.class));
+              final SqlSelect select = (SqlSelect) node;
+              assertThat(select.getFrom(), instanceOf(SqlJoin.class));
+              final SqlJoin from = requireNonNull((SqlJoin) select.getFrom());
+              assertThat(from.getLeft(), instanceOf(SqlJoin.class));
+              assertThat(from.getRight(), instanceOf(SqlIdentifier.class));
+            }));
+  }
+
+  @Test void testInternalComma() {
+    sql("select * from (a^,^ b) cross join c")
+        .fails("(?s)Encountered \",\" at .*");
+  }
+
   @Test void testJoinOn() {
     sql("select * from a left join b on 1 = 1 and 2 = 2 where 3 = 3")
         .ok("SELECT *\n"
@@ -4361,7 +4403,6 @@ public class SqlParserTest {
             + "Was expecting one of:\n"
             + "    \"LATERAL\" \\.\\.\\.\n"
             + "    \"TABLE\" \\.\\.\\.\n"
-            + "    \"UNNEST\" \\.\\.\\.\n"
             + "    <IDENTIFIER> \\.\\.\\.\n"
             + "    <HYPHENATED_IDENTIFIER> \\.\\.\\.\n"
             + "    <QUOTED_IDENTIFIER> \\.\\.\\.\n"
@@ -4369,7 +4410,8 @@ public class SqlParserTest {
             + "    <BIG_QUERY_BACK_QUOTED_IDENTIFIER> \\.\\.\\.\n"
             + "    <BRACKET_QUOTED_IDENTIFIER> \\.\\.\\.\n"
             + "    <UNICODE_QUOTED_IDENTIFIER> \\.\\.\\.\n"
-            + "    \"\\(\" \\.\\.\\.\n.*");
+            + "    \"\\(\" \\.\\.\\.\n.*"
+            + "    \"UNNEST\" \\.\\.\\.\n.*");
   }
 
   @Test void testEmptyValues() {
@@ -4558,6 +4600,35 @@ public class SqlParserTest {
         + "FOR SYSTEM_TIME AS OF (`ORDERS`.`ROWTIME` - INTERVAL '3' DAY) "
         + "ON (`ORDERS`.`PRODUCTID` = `PRODUCTS_TEMPORAL`.`PRODUCTID`)";
     sql(sql4).ok(expected4);
+  }
+
+  @Test void testAsofJoinTable() {
+    final String sql0 = "select * from orders asof join products\n"
+        + "match_condition orders.ts <= products.expiry\n"
+        + "on orders.productid = products.productid";
+    final String expected0 = "SELECT *\n"
+        + "FROM (`ORDERS` "
+        + "ASOF JOIN `PRODUCTS` "
+        + "MATCH_CONDITION (`ORDERS`.`TS` <= `PRODUCTS`.`EXPIRY`) "
+        + "ON (`ORDERS`.`PRODUCTID` = `PRODUCTS`.`PRODUCTID`))";
+    sql(sql0).ok(expected0);
+    final String sql1 = "select * from orders left asof join products\n"
+        + "match_condition orders.ts <= products.expiry\n"
+        + "on orders.productid = products.productid";
+    final String expected1 = "SELECT *\n"
+        + "FROM (`ORDERS` "
+        + "LEFT ASOF JOIN `PRODUCTS` "
+        + "MATCH_CONDITION (`ORDERS`.`TS` <= `PRODUCTS`.`EXPIRY`) "
+        + "ON (`ORDERS`.`PRODUCTID` = `PRODUCTS`.`PRODUCTID`))";
+    sql(sql1).ok(expected1);
+
+    sql("select * from orders asof join products\n"
+        + "on orders.productid = products.^productid^")
+        .fails("ASOF JOIN missing MATCH_CONDITION");
+    sql("select * from orders join products\n"
+        + "match_condition orders.ts <= products.expiry\n"
+        + "on orders.productid = products_temporal.^productid^")
+        .fails("MATCH_CONDITION only allowed with ASOF JOIN");
   }
 
   @Test void testCollectionTableWithLateral() {
@@ -6060,8 +6131,8 @@ public class SqlParserTest {
             + "FROM (VALUES (ROW(1))) AS `X`)))");
     sql("SELECT multiset(SELECT x FROM (VALUES(1)) x ^ORDER^ BY x)")
         .fails("(?s)Encountered \"ORDER\" at.*");
-    sql("SELECT multiset(SELECT x FROM (VALUES(1)) x, ^SELECT^ x FROM (VALUES(1)) x)")
-        .fails("(?s)Incorrect syntax near the keyword 'SELECT' at.*");
+    sql("SELECT multiset(SELECT x FROM (VALUES(1)) x^,^ SELECT x FROM (VALUES(1)) x)")
+        .fails("(?s)Encountered \", SELECT\" at.*");
     sql("SELECT multiset(^1^, SELECT x FROM (VALUES(1)) x)")
         .fails("(?s)Non-query expression encountered in illegal context");
   }
@@ -6153,6 +6224,10 @@ public class SqlParserTest {
         .ok("(ARRAY[])");
     expr("array[(1, 'a'), (2, 'b')]")
         .ok("(ARRAY[(ROW(1, 'a')), (ROW(2, 'b'))])");
+
+    expr("array[(select 1)]").ok("(ARRAY[(SELECT 1)])");
+    expr("array[(select 1), 2]").ok("(ARRAY[(SELECT 1), 2])");
+    expr("array[^select^ 1]").fails("(?s)Encountered \"select\".*");
   }
 
   @Test void testArrayFunction() {
@@ -6168,8 +6243,8 @@ public class SqlParserTest {
         .ok("SELECT (ARRAY (SELECT `X`\n"
             + "FROM (VALUES (ROW(1))) AS `X`\n"
             + "ORDER BY `X`))");
-    sql("SELECT array(SELECT x FROM (VALUES(1)) x, ^SELECT^ x FROM (VALUES(1)) x)")
-      .fails("(?s)Incorrect syntax near the keyword 'SELECT' at.*");
+    sql("SELECT array(SELECT x FROM (VALUES(1)) x^,^ SELECT x FROM (VALUES(1)) x)")
+      .fails("(?s)Encountered \", SELECT\" at.*");
     sql("SELECT array(1, ^SELECT^ x FROM (VALUES(1)) x)")
       .fails("(?s)Incorrect syntax near the keyword 'SELECT'.*");
   }
@@ -6308,8 +6383,8 @@ public class SqlParserTest {
 
     sql("SELECT map(1, ^SELECT^ x FROM (VALUES(1)) x)")
         .fails("(?s)Incorrect syntax near the keyword 'SELECT'.*");
-    sql("SELECT map(SELECT x FROM (VALUES(1)) x, ^SELECT^ x FROM (VALUES(1)) x)")
-        .fails("(?s)Incorrect syntax near the keyword 'SELECT' at.*");
+    sql("SELECT map(SELECT x FROM (VALUES(1)) x^,^ SELECT x FROM (VALUES(1)) x)")
+        .fails("(?s)Encountered \", SELECT\" at.*");
   }
 
   @Test void testVisitSqlInsertWithSqlShuttle() {
@@ -7180,9 +7255,16 @@ public class SqlParserTest {
         + "UNNEST(`DEPT`.`EMPLOYEES`, `DEPT`.`MANAGERS`)";
     sql(sql).ok(expected);
 
-    // LATERAL UNNEST is not valid
-    sql("select * from dept, lateral ^unnest^(dept.employees)")
-        .fails("(?s)Encountered \"unnest\" at .*");
+    // LATERAL UNNEST is the same as UNNEST
+    // (LATERAL is implicit for UNNEST, so the parser just ignores it)
+    sql("select * from dept, lateral unnest(dept.employees)")
+        .ok("SELECT *\n"
+            + "FROM `DEPT`,\n"
+            + "UNNEST(`DEPT`.`EMPLOYEES`)");
+    sql("select * from dept, unnest(dept.employees)")
+        .ok("SELECT *\n"
+            + "FROM `DEPT`,\n"
+            + "UNNEST(`DEPT`.`EMPLOYEES`)");
 
     // Does not generate extra parentheses around UNNEST because UNNEST is
     // a table expression.
@@ -8754,6 +8836,17 @@ public class SqlParserTest {
         + " FILTER (WHERE (`COL7` < `COL8`)) AS `SUM2`\n"
         + "FROM `T`\n"
         + "GROUP BY `COL9`";
+    sql(sql).ok(expected);
+  }
+
+  @Test void testMeasure() {
+    final String sql = "select deptno,\n"
+        + "  job as myJob,\n"
+        + "  sum(comm) / sum(sal) as measure commRatio\n"
+        + "from emp";
+    final String expected = "SELECT `DEPTNO`, `JOB` AS `MYJOB`,"
+        + " (SUM(`COMM`) / SUM(`SAL`)) AS MEASURE `COMMRATIO`\n"
+        + "FROM `EMP`";
     sql(sql).ok(expected);
   }
 

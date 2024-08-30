@@ -64,6 +64,7 @@ import org.apache.calcite.rel.metadata.BuiltInMetadata.ExplainVisibility;
 import org.apache.calcite.rel.metadata.BuiltInMetadata.ExpressionLineage;
 import org.apache.calcite.rel.metadata.BuiltInMetadata.LowerBoundCost;
 import org.apache.calcite.rel.metadata.BuiltInMetadata.MaxRowCount;
+import org.apache.calcite.rel.metadata.BuiltInMetadata.Measure;
 import org.apache.calcite.rel.metadata.BuiltInMetadata.Memory;
 import org.apache.calcite.rel.metadata.BuiltInMetadata.MinRowCount;
 import org.apache.calcite.rel.metadata.BuiltInMetadata.NodeTypes;
@@ -124,6 +125,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.Charset;
 import java.sql.ResultSet;
 import java.sql.Time;
@@ -158,10 +160,16 @@ public enum BuiltInMethod {
   AS_QUERYABLE(Enumerable.class, "asQueryable"),
   ABSTRACT_ENUMERABLE_CTOR(AbstractEnumerable.class),
   CHAR_DECIMAL_CAST(Primitive.class, "charToDecimalCast", String.class, int.class, int.class),
+  CHAR_DECIMAL_CAST_ROUNDING_MODE(Primitive.class, "charToDecimalCast",
+      String.class, int.class, int.class, RoundingMode.class),
   SHORT_INTERVAL_DECIMAL_CAST(Primitive.class, "shortIntervalToDecimalCast",
       Long.class, int.class, int.class, BigDecimal.class),
+  SHORT_INTERVAL_DECIMAL_CAST_ROUNDING_MODE(Primitive.class, "shortIntervalToDecimalCast",
+      Long.class, int.class, int.class, BigDecimal.class, RoundingMode.class),
   LONG_INTERVAL_DECIMAL_CAST(Primitive.class, "longIntervalToDecimalCast",
       Integer.class, int.class, int.class, BigDecimal.class),
+  LONG_INTERVAL_DECIMAL_CAST_ROUNDING_MODE(Primitive.class, "longIntervalToDecimalCast",
+      Integer.class, int.class, int.class, BigDecimal.class, RoundingMode.class),
   INTO(ExtendedEnumerable.class, "into", Collection.class),
   REMOVE_ALL(ExtendedEnumerable.class, "removeAll", Collection.class),
   SCHEMA_GET_SUB_SCHEMA(Schema.class, "getSubSchema", String.class),
@@ -183,6 +191,7 @@ public enum BuiltInMethod {
   JDBC_SCHEMA_DATA_SOURCE(JdbcSchema.class, "getDataSource"),
   ROW_VALUE(Row.class, "getObject", int.class),
   ROW_AS_COPY(Row.class, "asCopy", Object[].class),
+  ROW_COPY_VALUES(Row.class, "copyValues"), // This is an instance method that returns an Object[].
   RESULT_SET_ENUMERABLE_SET_TIMEOUT(ResultSetEnumerable.class, "setTimeout",
       DataContext.class),
   RESULT_SET_ENUMERABLE_OF(ResultSetEnumerable.class, "of", DataSource.class,
@@ -196,6 +205,13 @@ public enum BuiltInMethod {
       Function1.class,
       Function1.class, Function2.class, EqualityComparer.class,
       boolean.class, boolean.class, Predicate2.class),
+  ASOF_JOIN(ExtendedEnumerable.class, "asofJoin", Enumerable.class,
+      Function1.class,   // outer key selector
+      Function1.class,   // inner key selector
+      Function2.class,   // result selector
+      Predicate2.class,  // timestamp comparator
+      Comparator.class,  // match comparator
+      boolean.class),    // generateNullsOnRight
   MATCH(Enumerables.class, "match", Enumerable.class, Function1.class,
       Matcher.class, Enumerables.Emitter.class, int.class, int.class),
   PATTERN_BUILDER(Utilities.class, "patternBuilder"),
@@ -272,6 +288,8 @@ public enum BuiltInMethod {
   FUNCTION1_APPLY(Function1.class, "apply", Object.class),
   ARRAYS_AS_LIST(Arrays.class, "asList", Object[].class),
   ARRAY(SqlFunctions.class, "array", Object[].class),
+  ARRAY_COPY(System.class, "arraycopy", Object.class, int.class, Object.class, int.class,
+      int.class),
   // class PairList.Helper is deprecated to discourage code from calling its
   // methods directly, but use via Janino code generation is just fine.
   @SuppressWarnings("deprecation")
@@ -297,7 +315,19 @@ public enum BuiltInMethod {
   ENUMERABLE_TO_LIST(ExtendedEnumerable.class, "toList"),
   ENUMERABLE_TO_MAP(ExtendedEnumerable.class, "toMap", Function1.class, Function1.class),
   AS_LIST(Primitive.class, "asList", Object.class),
+  DECIMAL_DECIMAL_CAST(Primitive.class, "decimalDecimalCast",
+      BigDecimal.class, int.class, int.class),
+  DECIMAL_DECIMAL_CAST_ROUNDING_MODE(Primitive.class, "decimalDecimalCast",
+      BigDecimal.class, int.class, int.class, RoundingMode.class),
+  INTEGER_DECIMAL_CAST(Primitive.class, "integerDecimalCast", Number.class, int.class, int.class),
+  INTEGER_DECIMAL_CAST_ROUNDING_MODE(Primitive.class, "integerDecimalCast",
+      Number.class, int.class, int.class, RoundingMode.class),
+  FP_DECIMAL_CAST(Primitive.class, "fpDecimalCast", Number.class, int.class, int.class),
+  FP_DECIMAL_CAST_ROUNDING_MODE(Primitive.class, "fpDecimalCast",
+      Number.class, int.class, int.class, RoundingMode.class),
   INTEGER_CAST(Primitive.class, "integerCast", Primitive.class, Object.class),
+  INTEGER_CAST_ROUNDING_MODE(Primitive.class, "integerCast",
+      Primitive.class, Object.class, RoundingMode.class),
   MEMORY_GET0(MemoryFactory.Memory.class, "get"),
   MEMORY_GET1(MemoryFactory.Memory.class, "get", int.class),
   ENUMERATOR_CURRENT(Enumerator.class, "current"),
@@ -478,6 +508,10 @@ public enum BuiltInMethod {
       String[].class),
   MULTI_STRING_CONCAT_WITH_SEPARATOR(SqlFunctions.class,
       "concatMultiWithSeparator", String[].class),
+  MULTI_TYPE_STRING_ARRAY_CONCAT_WITH_SEPARATOR(SqlFunctions.class,
+      "concatMultiTypeWithSeparator", String.class, Object[].class),
+  MULTI_TYPE_OBJECT_CONCAT_WITH_SEPARATOR(SqlFunctions.class,
+      "concatMultiObjectWithSeparator", String.class, Object[].class),
   FLOOR_DIV(Math.class, "floorDiv", long.class, long.class),
   FLOOR_MOD(Math.class, "floorMod", long.class, long.class),
   ADD_MONTHS(DateTimeUtils.class, "addMonths", long.class, int.class),
@@ -488,14 +522,18 @@ public enum BuiltInMethod {
   CEIL(SqlFunctions.class, "ceil", int.class, int.class),
   ABS(SqlFunctions.class, "abs", long.class),
   ACOS(SqlFunctions.class, "acos", double.class),
+  ACOSD(SqlFunctions.class, "acosd", double.class),
   ACOSH(SqlFunctions.class, "acosh", double.class),
   ASIN(SqlFunctions.class, "asin", double.class),
+  ASIND(SqlFunctions.class, "asind", double.class),
   ASINH(SqlFunctions.class, "asinh", double.class),
   ATAN(SqlFunctions.class, "atan", double.class),
   ATAN2(SqlFunctions.class, "atan2", double.class, double.class),
+  ATAND(SqlFunctions.class, "atand", double.class),
   ATANH(SqlFunctions.class, "atanh", double.class),
   CBRT(SqlFunctions.class, "cbrt", double.class),
   COS(SqlFunctions.class, "cos", double.class),
+  COSD(SqlFunctions.class, "cosd", double.class),
   COSH(SqlFunctions.class, "cosh", long.class),
   COT(SqlFunctions.class, "cot", double.class),
   COTH(SqlFunctions.class, "coth", double.class),
@@ -519,13 +557,14 @@ public enum BuiltInMethod {
   SAFE_DIVIDE(SqlFunctions.class, "safeDivide", double.class, double.class),
   SAFE_MULTIPLY(SqlFunctions.class, "safeMultiply", double.class, double.class),
   SAFE_SUBTRACT(SqlFunctions.class, "safeSubtract", double.class, double.class),
-  LOG(SqlFunctions.class, "log", long.class, long.class),
-  LOG2(SqlFunctions.class, "log2", long.class),
+  LOG(SqlFunctions.class, "log", long.class, long.class, boolean.class),
   SEC(SqlFunctions.class, "sec", double.class),
   SECH(SqlFunctions.class, "sech", double.class),
   SIGN(SqlFunctions.class, "sign", long.class),
   SIN(SqlFunctions.class, "sin", double.class),
+  SIND(SqlFunctions.class, "sind", double.class),
   TAN(SqlFunctions.class, "tan", double.class),
+  TAND(SqlFunctions.class, "tand", double.class),
   TANH(SqlFunctions.class, "tanh", long.class),
   SINH(SqlFunctions.class, "sinh", long.class),
   TRUNCATE(SqlFunctions.class, "truncate", String.class, int.class),
@@ -573,15 +612,25 @@ public enum BuiltInMethod {
       String.class, String.class, int.class, int.class, int.class),
   REGEXP_LIKE3(SqlFunctions.RegexFunction.class, "regexpLike",
       String.class, String.class, String.class),
+  REGEXP_REPLACE2(SqlFunctions.RegexFunction.class, "regexpReplace",
+      String.class, String.class),
   REGEXP_REPLACE3(SqlFunctions.RegexFunction.class, "regexpReplace",
       String.class, String.class, String.class),
   REGEXP_REPLACE4(SqlFunctions.RegexFunction.class, "regexpReplace",
       String.class, String.class, String.class, int.class),
-  REGEXP_REPLACE5(SqlFunctions.RegexFunction.class, "regexpReplace",
+  REGEXP_REPLACE5_OCCURRENCE(SqlFunctions.RegexFunction.class, "regexpReplace",
       String.class, String.class, String.class, int.class, int.class),
+  REGEXP_REPLACE5_MATCHTYPE(SqlFunctions.RegexFunction.class, "regexpReplace",
+      String.class, String.class, String.class, int.class, String.class),
   REGEXP_REPLACE6(SqlFunctions.RegexFunction.class, "regexpReplace",
       String.class, String.class, String.class, int.class, int.class,
       String.class),
+  REGEXP_REPLACE_BIG_QUERY_3(SqlFunctions.RegexFunction.class, "regexpReplaceNonDollarIndexed",
+      String.class, String.class, String.class),
+  REGEXP_REPLACE_PG_3(SqlFunctions.RegexFunction.class, "regexpReplacePg",
+      String.class, String.class, String.class),
+  REGEXP_REPLACE_PG_4(SqlFunctions.RegexFunction.class, "regexpReplacePg",
+      String.class, String.class, String.class, String.class),
   IS_TRUE(SqlFunctions.class, "isTrue", Boolean.class),
   IS_NOT_FALSE(SqlFunctions.class, "isNotFalse", Boolean.class),
   NOT(SqlFunctions.class, "not", Boolean.class),
@@ -661,7 +710,11 @@ public enum BuiltInMethod {
       String.class),
   TO_DATE(SqlFunctions.DateFormatFunction.class, "toDate", String.class,
       String.class),
+  TO_DATE_PG(SqlFunctions.DateFormatFunction.class, "toDatePg", String.class,
+      String.class),
   TO_TIMESTAMP(SqlFunctions.DateFormatFunction.class, "toTimestamp", String.class,
+      String.class),
+  TO_TIMESTAMP_PG(SqlFunctions.DateFormatFunction.class, "toTimestampPg", String.class,
       String.class),
   FORMAT_DATE(SqlFunctions.DateFormatFunction.class, "formatDate",
       String.class, int.class),
@@ -817,6 +870,8 @@ public enum BuiltInMethod {
   CUMULATIVE_MEMORY_WITHIN_PHASE(Memory.class, "cumulativeMemoryWithinPhase"),
   CUMULATIVE_MEMORY_WITHIN_PHASE_SPLIT(Memory.class,
       "cumulativeMemoryWithinPhaseSplit"),
+  IS_MEASURE(Measure.class, "isMeasure", int.class),
+  MEASURE_EXPAND(Measure.class, "expand", int.class, Measure.Context.class),
   COLUMN_UNIQUENESS(ColumnUniqueness.class, "areColumnsUnique",
       ImmutableBitSet.class, boolean.class),
   COLLATIONS(Collation.class, "collations"),

@@ -22,6 +22,7 @@ import org.apache.calcite.linq4j.AbstractEnumerable;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.linq4j.Enumerator;
 import org.apache.calcite.linq4j.JoinType;
+import org.apache.calcite.linq4j.Nullness;
 import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.linq4j.function.Function1;
 import org.apache.calcite.linq4j.function.Function2;
@@ -30,12 +31,14 @@ import org.apache.calcite.linq4j.tree.BlockBuilder;
 import org.apache.calcite.linq4j.tree.BlockStatement;
 import org.apache.calcite.linq4j.tree.ConstantExpression;
 import org.apache.calcite.linq4j.tree.ConstantUntypedNull;
+import org.apache.calcite.linq4j.tree.DeclarationStatement;
 import org.apache.calcite.linq4j.tree.Expression;
 import org.apache.calcite.linq4j.tree.ExpressionType;
 import org.apache.calcite.linq4j.tree.Expressions;
 import org.apache.calcite.linq4j.tree.FunctionExpression;
 import org.apache.calcite.linq4j.tree.MethodCallExpression;
 import org.apache.calcite.linq4j.tree.MethodDeclaration;
+import org.apache.calcite.linq4j.tree.NewArrayExpression;
 import org.apache.calcite.linq4j.tree.ParameterExpression;
 import org.apache.calcite.linq4j.tree.Primitive;
 import org.apache.calcite.linq4j.tree.Types;
@@ -61,10 +64,12 @@ import com.google.common.collect.ImmutableMap;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
 
+import java.lang.reflect.Array;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.sql.Date;
 import java.sql.Time;
 import java.sql.Timestamp;
@@ -160,6 +165,34 @@ public class EnumUtils {
     // Generate all fields.
     final List<Expression> expressions = new ArrayList<>();
     final int outputFieldCount = physType.getRowType().getFieldCount();
+
+    // If there are many output fields, create the output dynamically so that the code size stays
+    // below the limit. See CALCITE-3094.
+    final boolean generateCompactCode = outputFieldCount >= 100;
+    final ParameterExpression compactOutputVar;
+    final BlockBuilder compactCode = new BlockBuilder();
+    if (generateCompactCode) {
+      Class<?> fieldClass = physType.fieldClass(0);
+      // If all fields have the same type, use the specific type. Otherwise just use Object.
+      for (int fieldIndex = 1; fieldIndex < outputFieldCount; ++fieldIndex) {
+        if (fieldClass != physType.fieldClass(fieldIndex)) {
+          fieldClass = Object.class;
+          break;
+        }
+      }
+
+      final Class<?> arrayClass = Array.newInstance(fieldClass, 0).getClass();
+      compactOutputVar = Expressions.variable(arrayClass, "outputArray");
+      final DeclarationStatement exp =
+          Expressions.declare(
+              0, compactOutputVar, new NewArrayExpression(fieldClass, 1,
+              Expressions.constant(outputFieldCount), null));
+      compactCode.add(exp);
+    } else {
+      compactOutputVar = null;
+    }
+
+    int outputField = 0;
     for (Ord<PhysType> ord : Ord.zip(inputPhysTypes)) {
       final PhysType inputPhysType =
           ord.e.makeNullable(joinType.generatesNullsOn(ord.i));
@@ -175,6 +208,18 @@ public class EnumUtils {
         break;
       }
       final int fieldCount = inputPhysType.getRowType().getFieldCount();
+      if (generateCompactCode) {
+        // use an array copy if possible
+        final Expression copyExpr =
+            Nullness.castNonNull(
+                inputPhysType.getFormat().copy(parameter, Nullness.castNonNull(compactOutputVar),
+                outputField, fieldCount));
+        compactCode.add(Expressions.statement(copyExpr));
+        outputField += fieldCount;
+        continue;
+      }
+
+      // otherwise access the fields individually
       for (int i = 0; i < fieldCount; i++) {
         Expression expression =
             inputPhysType.fieldReference(parameter, i,
@@ -189,6 +234,34 @@ public class EnumUtils {
         expressions.add(expression);
       }
     }
+
+    if (generateCompactCode) {
+      compactCode.add(Nullness.castNonNull(compactOutputVar));
+
+      // This expression generates code of the form:
+      // new org.apache.calcite.linq4j.function.Function2() {
+      //   public String[] apply(org.apache.calcite.interpreter.Row left,
+      //       org.apache.calcite.interpreter.Row right) {
+      //     String[] outputArray = new String[left.length + right.length];
+      //     System.arraycopy(left.copyValues(), 0, outputArray, 0, left.length);
+      //     System.arraycopy(right.copyValues(), 0, outputArray, left.length, right.length);
+      //     return outputArray;
+      //   }
+      //   public String[] apply(Object left, Object right) {
+      //     return apply(
+      //         (org.apache.calcite.interpreter.Row) left,
+      //         (org.apache.calcite.interpreter.Row) right);
+      //   }
+      // }
+      // That is, it converts the left and right Row objects to Object[] using Row#copyValues()
+      // then writes each to an output Object[] using System.arraycopy()
+
+      return Expressions.lambda(
+          Function2.class,
+          compactCode.toBlock(),
+          parameters);
+    }
+
     return Expressions.lambda(
         Function2.class,
         physType.record(expressions),
@@ -409,10 +482,25 @@ public class EnumUtils {
     if (toPrimitive != null) {
       if (fromPrimitive != null) {
         // E.g. from "float" to "double"
-        return Expressions.convert_(
+        if (toPrimitive == Primitive.BOOLEAN) {
+          // Conversion to Boolean can use the existing 'convert_' function
+          return Expressions.convert_(operand, toPrimitive.getPrimitiveClass());
+        }
+        // Other destination types require checked conversions
+        return Expressions.convertChecked(
             operand, toPrimitive.getPrimitiveClass());
       }
-      if (fromNumber || fromBox == Primitive.CHAR) {
+      if (fromType == BigDecimal.class && toPrimitive.isFixedNumeric()) {
+        // Conversion from decimal to an exact type
+        ConstantExpression zero = Expressions.constant(0);
+        // Elsewhere Calcite uses this rounding mode implicitly, so we have to be consistent.
+        // E.g., this is the rounding mode used by BigDecimal.longValue().
+        Expression rounding = Expressions.constant(RoundingMode.DOWN);
+        // Generate 'rounded = operand.setScale(0, RoundingMode.DOWN);'
+        Expression rounded = Expressions.call(operand, "setScale", zero, rounding);
+        // Generate 'return rounded.to*ValueExact()'
+        return Expressions.unboxExact(rounded, toPrimitive);
+      } else if (fromNumber || fromBox == Primitive.CHAR) {
         // Generate "x.shortValue()".
         return Expressions.unbox(operand, toPrimitive);
       } else {
@@ -754,6 +842,10 @@ public class EnumUtils {
       return JoinType.SEMI;
     case ANTI:
       return JoinType.ANTI;
+    case ASOF:
+      return JoinType.ASOF;
+    case LEFT_ASOF:
+      return JoinType.LEFT_ASOF;
     default:
       break;
     }

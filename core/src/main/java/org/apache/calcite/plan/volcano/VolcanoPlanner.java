@@ -517,7 +517,7 @@ public class VolcanoPlanner extends AbstractRelOptPlanner {
    * query
    */
   @Override public RelNode findBestExp() {
-    assert root != null : "root must not be null";
+    assert root != null : "'root' must not be null";
     ensureRootConverters();
     registerMaterializations();
 
@@ -982,11 +982,25 @@ public class VolcanoPlanner extends AbstractRelOptPlanner {
         if (!relNode.getTraitSet().satisfies(subset.getTraitSet())) {
           continue;
         }
-        if (!cost.isLt(subset.bestCost)) {
+
+        // Update subset best and best's cost when we find a cheaper rel
+        if (relNode != subset.best && !cost.isLt(subset.bestCost)) {
           continue;
         }
-        // Update subset best cost when we find a cheaper rel or the current
-        // best's cost is changed
+
+        // The cost of the RelNode is updated when a change is detected.
+
+        // The reason for this update is that when one of the subsets in RelSet finds a RelNode
+        // with a lower cost, it is necessary to update the parents of the subset to
+        // have the best RelNode and best cost.
+        // In theory, this cost should become smaller.
+        // However, according to the SQL added in the JdbcAdapterTest {@link testVolcanoPlannerInternalValid},
+        // it is observed that the cost of RelNode can sometimes increase.
+        // Therefore, an update is performed.
+        if (relNode == subset.best && cost.equals(subset.bestCost)) {
+          continue;
+        }
+
         subset.timestamp++;
         LOGGER.trace("Subset cost changed: subset [{}] cost was {} now {}",
             subset, subset.bestCost, cost);

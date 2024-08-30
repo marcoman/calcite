@@ -71,6 +71,29 @@ class JdbcAdapterTest {
         .returnsCount(14);
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6462">[CALCITE-6462]
+   * VolcanoPlanner internal valid may throw exception when log trace is enabled</a>. */
+  @Test void testVolcanoPlannerInternalValid() {
+    CalciteAssert.model(JdbcTest.SCOTT_MODEL)
+        .query("select *\n"
+            + "from scott.emp e left join scott.dept d\n"
+            + "on 'job' in (select job from scott.bonus b)")
+        .explainContains("PLAN=JdbcToEnumerableConverter\n"
+            + "  JdbcProject(EMPNO=[$0], ENAME=[$1], JOB=[$2], MGR=[$3], HIREDATE=[$4], SAL=[$5], COMM=[$6], DEPTNO=[$7], DEPTNO0=[$8], DNAME=[$9], LOC=[$10])\n"
+            + "    JdbcJoin(condition=[true], joinType=[left])\n"
+            + "      JdbcTableScan(table=[[SCOTT, EMP]])\n"
+            + "      JdbcJoin(condition=[true], joinType=[inner])\n"
+            + "        JdbcTableScan(table=[[SCOTT, DEPT]])\n"
+            + "        JdbcAggregate(group=[{0}])\n"
+            + "          JdbcProject(cs=[true])\n"
+            + "            JdbcFilter(condition=[=('job', $1)])\n"
+            + "              JdbcTableScan(table=[[SCOTT, BONUS]])\n\n")
+        .runs()
+        .enable(CalciteAssert.DB == DatabaseInstance.HSQLDB)
+        .returnsCount(14);
+  }
+
   @Test void testUnionPlan() {
     CalciteAssert.model(FoodmartSchema.FOODMART_MODEL)
         .query("select * from \"sales_fact_1997\"\n"
@@ -207,6 +230,164 @@ class JdbcAdapterTest {
   }
 
   /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6401">[CALCITE-6401]
+   * JDBC adapter cannot push down JOIN with condition
+   * includes IS TRUE、IS NULL、Dynamic parameter、CAST、Literal comparison</a>. */
+  @Test void testJoinConditionPushDownIsTrue() {
+    CalciteAssert.model(JdbcTest.SCOTT_MODEL)
+        .query("select emp1.empno\n"
+            + "from scott.emp as emp1 join scott.emp as emp2 on\n"
+            + "(emp1.empno = emp2.empno) is true\n"
+            + " and (emp1.ename = emp2.ename) is not true")
+        .explainContains("PLAN=JdbcToEnumerableConverter\n"
+            + "  JdbcProject(EMPNO=[$0])\n"
+            + "    JdbcJoin(condition=[AND(=($0, $2), IS NOT TRUE(=($1, $3)))], joinType=[inner])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n\n")
+        .runs()
+        .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
+        .planHasSql("SELECT \"t\".\"EMPNO\"\n"
+            + "FROM (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t\"\n"
+            + "INNER JOIN (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t0\" ON \"t\".\"EMPNO\" = \"t0\".\"EMPNO\" AND \"t\".\"ENAME\" = \"t0\".\"ENAME\" IS NOT TRUE");
+  }
+
+  @Test void testJoinConditionPushDownIsFalse() {
+    CalciteAssert.model(JdbcTest.SCOTT_MODEL)
+        .query("select emp1.empno\n"
+            + "from scott.emp as emp1 join scott.emp as emp2 on\n"
+            + "(emp1.empno = emp2.empno) is false\n"
+            + " and (emp1.ename = emp2.ename) is not false")
+        .explainContains("PLAN=JdbcToEnumerableConverter\n"
+            + "  JdbcProject(EMPNO=[$0])\n"
+            + "    JdbcJoin(condition=[AND(<>($0, $2), IS NOT FALSE(=($1, $3)))], joinType=[inner])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n\n")
+        .runs()
+        .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
+        .planHasSql("SELECT \"t\".\"EMPNO\"\n"
+            + "FROM (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t\"\n"
+            + "INNER JOIN (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t0\" ON \"t\".\"EMPNO\" <> \"t0\".\"EMPNO\" AND \"t\".\"ENAME\" = \"t0\".\"ENAME\" IS NOT FALSE");
+  }
+
+  @Test void testJoinConditionPushDownIsNull() {
+    CalciteAssert.model(JdbcTest.SCOTT_MODEL)
+        .query("select emp1.empno\n"
+            + "from scott.emp as emp1 join scott.emp as emp2 on\n"
+            + "(emp1.empno = emp2.empno or emp1.ename is null)\n"
+            + " and (emp1.ename = emp2.ename or emp2.empno is null)")
+        .explainContains("PLAN=JdbcToEnumerableConverter\n"
+            + "  JdbcProject(EMPNO=[$0])\n"
+            + "    JdbcJoin(condition=[AND(OR(IS NULL($1), =($0, $2)), =($1, $3))], joinType=[inner])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n\n")
+        .runs()
+        .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
+        .planHasSql("SELECT \"t\".\"EMPNO\"\n"
+            + "FROM (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t\"\n"
+            + "INNER JOIN (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t0\" ON (\"t\".\"ENAME\" IS NULL OR \"t\".\"EMPNO\" = \"t0\".\"EMPNO\") AND \"t\".\"ENAME\" = \"t0\".\"ENAME\"");
+  }
+
+  @Test void testJoinConditionPushDownIsNotNull() {
+    CalciteAssert.model(JdbcTest.SCOTT_MODEL)
+        .query("select emp1.empno\n"
+            + "from scott.emp as emp1 join scott.emp as emp2 on\n"
+            + "(emp1.empno = emp2.empno and emp1.ename is not null)\n"
+            + " or (emp1.ename = emp2.ename and emp2.empno is not null)")
+        .explainContains("PLAN=JdbcToEnumerableConverter\n"
+            + "  JdbcProject(EMPNO=[$0])\n"
+            + "    JdbcJoin(condition=[OR(AND(=($0, $2), IS NOT NULL($1)), =($1, $3))], joinType=[inner])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n\n")
+        .runs()
+        .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
+        .planHasSql("SELECT \"t\".\"EMPNO\"\n"
+            + "FROM (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t\"\n"
+            + "INNER JOIN (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t0\" ON \"t\".\"EMPNO\" = \"t0\".\"EMPNO\" AND \"t\".\"ENAME\" IS NOT NULL OR \"t\".\"ENAME\" = \"t0\".\"ENAME\"");
+  }
+
+  @Test void testJoinConditionPushDownLiteral() {
+    CalciteAssert.model(JdbcTest.SCOTT_MODEL)
+        .query("select emp1.empno\n"
+            + "from scott.emp as emp1 join scott.emp as emp2 on\n"
+            + "(emp1.empno = emp2.empno and emp1.ename = 'empename') or\n"
+            + "(emp1.ename = emp2.ename and emp2.empno = 5)")
+        .explainContains("PLAN=JdbcToEnumerableConverter\n"
+            + "  JdbcProject(EMPNO=[$0])\n"
+            + "    JdbcJoin(condition=[OR(AND(=($0, $2), =($1, 'empename')), AND(=($1, $3), =(CAST($2):INTEGER NOT NULL, 5)))], joinType=[inner])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n\n")
+        .runs()
+        .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
+        .planHasSql("SELECT \"t\".\"EMPNO\"\n"
+            + "FROM (SELECT \"EMPNO\", \"ENAME\"\nFROM \"SCOTT\".\"EMP\") AS \"t\"\n"
+            + "INNER JOIN (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t0\" ON \"t\".\"EMPNO\" = \"t0\".\"EMPNO\" AND \"t\".\"ENAME\" = 'empename' OR \"t\".\"ENAME\" = \"t0\".\"ENAME\" AND CAST(\"t0\".\"EMPNO\" AS INTEGER) = 5");
+  }
+
+  @Test void testJoinConditionPushDownCast() {
+    CalciteAssert.model(JdbcTest.SCOTT_MODEL)
+        .query("select emp1.empno\n"
+            + "from scott.emp as emp1 join scott.emp as emp2 on\n"
+            + "(emp1.empno = emp2.empno and emp1.ename = 'empename') or\n"
+            + "(emp1.ename = emp2.ename and emp2.empno = 5)")
+        .explainContains("PLAN=JdbcToEnumerableConverter\n"
+            + "  JdbcProject(EMPNO=[$0])\n"
+            + "    JdbcJoin(condition=[OR(AND(=($0, $2), =($1, 'empename')), AND(=($1, $3), =(CAST($2):INTEGER NOT NULL, 5)))], joinType=[inner])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n\n")
+        .runs()
+        .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
+        .planHasSql("SELECT \"t\".\"EMPNO\"\n"
+            + "FROM (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t\"\n"
+            + "INNER JOIN (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t0\" ON \"t\".\"EMPNO\" = \"t0\".\"EMPNO\" AND \"t\".\"ENAME\" = 'empename' OR \"t\".\"ENAME\" = \"t0\".\"ENAME\" AND CAST(\"t0\".\"EMPNO\" AS INTEGER) = 5");
+  }
+
+  @Test void testJoinConditionPushDownDynamicParam() {
+    CalciteAssert.model(JdbcTest.SCOTT_MODEL)
+        .query("select emp1.empno\n"
+            + "from scott.emp as emp1 join scott.emp as emp2 on\n"
+            + "(emp1.empno = emp2.empno and emp1.ename = 'empename') or\n"
+            + "(emp1.ename = emp2.ename and emp2.empno = ?)")
+        .consumesPreparedStatement(p -> p.setInt(1, 5))
+        .explainContains("PLAN=JdbcToEnumerableConverter\n"
+            + "  JdbcProject(EMPNO=[$0])\n"
+            + "    JdbcJoin(condition=[OR(AND(=($0, $2), =($1, 'empename')), AND(=($1, $3), =($2, ?0)))], joinType=[inner])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n"
+            + "      JdbcProject(EMPNO=[$0], ENAME=[$1])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])\n\n")
+        .runs()
+        .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
+        .planHasSql("SELECT \"t\".\"EMPNO\"\n"
+            + "FROM (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t\"\n"
+            + "INNER JOIN (SELECT \"EMPNO\", \"ENAME\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t0\" ON \"t\".\"EMPNO\" = \"t0\".\"EMPNO\" AND \"t\".\"ENAME\" = 'empename' OR \"t\".\"ENAME\" = \"t0\".\"ENAME\" AND \"t0\".\"EMPNO\" = ?");
+  }
+
+  /** Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-3751">[CALCITE-3751]
    * JDBC adapter wrongly pushes ORDER BY into sub-query</a>. */
   @Test void testOrderByPlan() {
@@ -321,6 +502,21 @@ class JdbcAdapterTest {
             + "FROM \"SCOTT\".\"EMP\") AS \"t0\" "
             + "ON \"t\".\"MGR\" = \"t0\".\"EMPNO\" "
             + "AND (\"t\".\"SAL\" > \"t0\".\"SAL\" OR \"t\".\"HIREDATE\" < \"t0\".\"HIREDATE\")");
+  }
+
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6436">[CALCITE-6436]
+   * JDBC adapter generates SQL missing parentheses when comparing 3 values with
+   * the same precedence like (a=b)=c</a>. */
+  @Test void testMissingParentheses() {
+    CalciteAssert.model(FoodmartSchema.FOODMART_MODEL)
+        .query("select * from \"sales_fact_1997\" "
+            + "where (\"product_id\" = 1) = ?")
+        .consumesPreparedStatement(p -> p.setBoolean(1, true))
+        .returnsCount(26)
+        .planHasSql("SELECT *\nFROM \"foodmart\".\"sales_fact_1997\"\n"
+            + "WHERE (\"product_id\" = 1) = ?");
   }
 
   @Test void testJoin3TablesPlan() {
@@ -729,6 +925,24 @@ class JdbcAdapterTest {
             + "FROM \"foodmart\".\"expense_fact\"");
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6346">[CALCITE-6346]
+   * JdbcAdapter: Cast for dynamic filter arguments is lost</a>. */
+  @Test void testCastDynamic() {
+    CalciteAssert.that()
+        .with(CalciteAssert.Config.FOODMART_CLONE)
+        .query("SELECT * FROM \"foodmart\".\"sales_fact_1997\""
+            + " WHERE cast (? as varchar(10)) = cast(? as varchar(10))")
+        .planHasSql("SELECT *\n"
+            + "FROM \"foodmart\".\"sales_fact_1997\"\n"
+            + "WHERE CAST(? AS VARCHAR(10)) = CAST(? AS VARCHAR(10))")
+        .consumesPreparedStatement(p -> {
+          p.setInt(1, 10);
+          p.setLong(2, 10);
+        })
+        .runs();
+  }
+
   @Test void testLastValueOver() {
     CalciteAssert
         .model(FoodmartSchema.FOODMART_MODEL)
@@ -914,12 +1128,12 @@ class JdbcAdapterTest {
         + "  JdbcTableModify(table=[[foodmart, expense_fact]], "
         + "operation=[INSERT], flattened=[false])\n"
         + "    JdbcValues(tuples=[[{ 666, 666, 1997-01-01 00:00:00, 666, "
-        + "'666', 666, 666 }]])\n\n";
+        + "'666', 666, 666.0000 }]])\n\n";
     final String jdbcSql = "INSERT INTO \"foodmart\".\"expense_fact\" (\"store_id\", "
         + "\"account_id\", \"exp_date\", \"time_id\", \"category_id\", \"currency_id\", "
         + "\"amount\")\n"
         + "VALUES (666, 666, TIMESTAMP '1997-01-01 00:00:00', 666, '666', "
-        + "666, 666)";
+        + "666, 666.0000)";
     final AssertThat that =
         CalciteAssert.model(FoodmartSchema.FOODMART_MODEL)
             .enable(CalciteAssert.DB == DatabaseInstance.HSQLDB
@@ -947,14 +1161,14 @@ class JdbcAdapterTest {
         + "  JdbcTableModify(table=[[foodmart, expense_fact]], "
         + "operation=[INSERT], flattened=[false])\n"
         + "    JdbcValues(tuples=[["
-        + "{ 666, 666, 1997-01-01 00:00:00, 666, '666', 666, 666 }, "
-        + "{ 666, 777, 1997-01-01 00:00:00, 666, '666', 666, 666 }]])\n\n";
+        + "{ 666, 666, 1997-01-01 00:00:00, 666, '666', 666, 666.0000 }, "
+        + "{ 666, 777, 1997-01-01 00:00:00, 666, '666', 666, 666.0000 }]])\n\n";
     final String jdbcSql = "INSERT INTO \"foodmart\".\"expense_fact\""
         + " (\"store_id\", \"account_id\", \"exp_date\", \"time_id\", "
         + "\"category_id\", \"currency_id\", \"amount\")\n"
         + "VALUES "
-        + "(666, 666, TIMESTAMP '1997-01-01 00:00:00', 666, '666', 666, 666),\n"
-        + "(666, 777, TIMESTAMP '1997-01-01 00:00:00', 666, '666', 666, 666)";
+        + "(666, 666, TIMESTAMP '1997-01-01 00:00:00', 666, '666', 666, 666.0000),\n"
+        + "(666, 777, TIMESTAMP '1997-01-01 00:00:00', 666, '666', 666, 666.0000)";
     final AssertThat that =
         CalciteAssert.model(FoodmartSchema.FOODMART_MODEL)
             .enable(CalciteAssert.DB == DatabaseInstance.HSQLDB
