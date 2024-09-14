@@ -85,7 +85,7 @@ public class RelNodeConversionBenchmark {
       StringBuilder sb = new StringBuilder();
       sb.append("select 1 ");
       Random rnd = new Random();
-      rnd.setSeed(424242);
+      rnd.setSeed(System.currentTimeMillis());
       for (int i = 0; i < length; i++) {
         sb.append(", ");
         sb.append(

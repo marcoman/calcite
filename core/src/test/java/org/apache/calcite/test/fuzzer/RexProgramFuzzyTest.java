@@ -457,7 +457,7 @@ class RexProgramFuzzyTest extends RexProgramBuilderBase {
   @Disabled("This is just a scaffold for quick investigation of a single fuzz test")
   @Test void singleFuzzyTest() {
     Random r = new Random();
-    r.setSeed(4887662474363391810L);
+    r.setSeed(System.currentTimeMillis());
     RexFuzzer fuzzer = new RexFuzzer(rexBuilder, typeFactory);
     generateRexAndCheckTrueFalse(fuzzer, r);
   }
