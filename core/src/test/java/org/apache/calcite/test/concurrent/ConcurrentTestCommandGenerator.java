@@ -954,11 +954,11 @@ public class ConcurrentTestCommandGenerator {
             row.add(new BigInteger(stringValue));
           } else if (stringValue.matches("^-?[0-9]*\\.[0-9]+$")) {
             row.add(new BigDecimal(stringValue));
-          } else if (stringValue.equals("true")) {
+          } else if ("true".equals(stringValue)) {
             row.add(Boolean.TRUE);
-          } else if (stringValue.equals("false")) {
+          } else if ("false".equals(stringValue)) {
             row.add(Boolean.FALSE);
-          } else if (stringValue.equals("null")) {
+          } else if ("null".equals(stringValue)) {
             row.add(null);
           } else {
             throw new IllegalStateException(

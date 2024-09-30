@@ -320,7 +320,7 @@ class DruidConnectionImpl implements DruidConnection {
     // Move to next token, which is name's value
     JsonToken token = parser.nextToken();
 
-    boolean isTimestampColumn = fieldName.equals(DEFAULT_RESPONSE_TIMESTAMP_COLUMN);
+    boolean isTimestampColumn = DEFAULT_RESPONSE_TIMESTAMP_COLUMN.equals(fieldName);
     int i = fieldNames.indexOf(fieldName);
     ColumnMetaData.Rep type = null;
     if (i < 0) {

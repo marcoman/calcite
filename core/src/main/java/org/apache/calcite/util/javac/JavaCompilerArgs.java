@@ -76,15 +76,15 @@ public class JavaCompilerArgs {
   public void setStringArray(String[] args) {
     for (int i = 0; i < args.length; i++) {
       String arg = args[i];
-      if (arg.equals("-classpath")) {
+      if ("-classpath".equals(arg)) {
         if (++i < args.length) {
           setClasspath(args[i]);
         }
-      } else if (arg.equals("-d")) {
+      } else if ("-d".equals(arg)) {
         if (++i < args.length) {
           setDestdir(args[i]);
         }
-      } else if (arg.equals("-verbose")) {
+      } else if ("-verbose".equals(arg)) {
         setVerbose(true);
       } else {
         argsList.add(args[i]);

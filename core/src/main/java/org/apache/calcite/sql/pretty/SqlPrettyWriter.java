@@ -764,7 +764,7 @@ public class SqlPrettyWriter implements SqlWriter {
         @Override protected void sep(boolean printFirst, String sep) {
           final boolean newlineBeforeSep;
           final boolean newlineAfterSep;
-          if (sep.equals(",")) {
+          if (",".equals(sep)) {
             newlineBeforeSep = newlineBeforeComma;
             newlineAfterSep = newlineAfterComma;
           } else {
@@ -887,8 +887,8 @@ public class SqlPrettyWriter implements SqlWriter {
     if (endedFrame == null) {
       throw new RuntimeException("No list started");
     }
-    if (endedFrame.open.equals("(")) {
-      if (!endedFrame.close.equals(")")) {
+    if ("(".equals(endedFrame.open)) {
+      if (!")".equals(endedFrame.close)) {
         throw new RuntimeException("Expected ')'");
       }
     }
@@ -942,7 +942,7 @@ public class SqlPrettyWriter implements SqlWriter {
         isKeywordsLowerCase()
             ? s.toLowerCase(Locale.ROOT)
             : s.toUpperCase(Locale.ROOT));
-    if (!s.equals("")) {
+    if (!"".equals(s)) {
       setNeedWhitespace(needWhitespaceAfter(s));
     }
   }
@@ -954,18 +954,18 @@ public class SqlPrettyWriter implements SqlWriter {
   }
 
   private static boolean needWhitespaceBefore(String s) {
-    return !(s.equals(",")
-        || s.equals(".")
-        || s.equals(")")
-        || s.equals("[")
-        || s.equals("]")
-        || s.equals(""));
+    return !(",".equals(s)
+        || ".".equals(s)
+        || ")".equals(s)
+        || "[".equals(s)
+        || "]".equals(s)
+        || "".equals(s));
   }
 
   private static boolean needWhitespaceAfter(String s) {
-    return !(s.equals("(")
-        || s.equals("[")
-        || s.equals("."));
+    return !("(".equals(s)
+        || "[".equals(s)
+        || ".".equals(s));
   }
 
   protected void whiteSpace() {
@@ -1085,7 +1085,7 @@ public class SqlPrettyWriter implements SqlWriter {
   }
 
   @Override public void sep(String sep) {
-    sep(sep, !(sep.equals(",") || sep.equals(".")));
+    sep(sep, !(",".equals(sep) || ".".equals(sep)));
   }
 
   @Override public void sep(String sep, boolean printFirst) {

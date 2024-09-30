@@ -77,7 +77,7 @@ class FileReaderTest {
     //   unable to find valid certification path to requested target
     final String r = getProperty("java.runtime.name");
     // http://openjdk.java.net/jeps/319 => root certificates are bundled with JEP 10
-    assumeTrue(!r.equals("OpenJDK Runtime Environment")
+    assumeTrue(!"OpenJDK Runtime Environment".equals(r)
             || getJavaMajorVersion() > 10,
         "Java 10+ should have root certificates (JEP 319). Runtime is "
             + r + ", Jave major version is " + getJavaMajorVersion());

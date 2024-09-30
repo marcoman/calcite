@@ -758,7 +758,7 @@ class CalciteRemoteDriverTest {
       return o instanceof Number
           && ((Number) o).intValue() != 0
           || o instanceof String
-          && ((String) o).equalsIgnoreCase("true");
+          && "true".equalsIgnoreCase(((String) o));
     }
     if (clazz == byte[].class) {
       if (o instanceof String) {

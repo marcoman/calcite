@@ -1267,7 +1267,7 @@ public class DruidQuery extends AbstractRelNode implements BindableRel {
     if (limit.collations.get(0).dimension.equals(groupByKeyDims.get(0).getOutputName())) {
       return null;
     }
-    if (limit.collations.get(0).direction.equals("ascending")) {
+    if ("ascending".equals(limit.collations.get(0).direction)) {
       // Only DESC is allowed
       return null;
     }

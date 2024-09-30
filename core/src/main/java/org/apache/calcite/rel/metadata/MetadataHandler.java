@@ -49,7 +49,7 @@ public interface MetadataHandler<M extends Metadata> {
     final ImmutableSortedMap.Builder<String, Method> map =
         ImmutableSortedMap.naturalOrder();
     Arrays.stream(handlerClass.getDeclaredMethods())
-        .filter(m -> !m.getName().equals("getDef"))
+        .filter(m -> !"getDef".equals(m.getName()))
         .filter(m -> !m.isSynthetic())
         .filter(m -> !isStatic(m))
         .forEach(m -> map.put(m.getName(), m));

@@ -373,7 +373,7 @@ public class ConcurrentTestCommandScript
           String[] tokens = sql.split(" +");
           // handle only SET FORCE
           if ((tokens.length > 2)
-              && tokens[1].equalsIgnoreCase("force")) {
+              && "force".equalsIgnoreCase(tokens[1])) {
             forced = asBoolValue(tokens[2]);
           }
           continue;           // else ignore
@@ -438,9 +438,9 @@ public class ConcurrentTestCommandScript
    * translates argument of !set force etc.
    */
   private boolean asBoolValue(String s) {
-    return s.equalsIgnoreCase("true")
-        || s.equalsIgnoreCase("yes")
-        || s.equalsIgnoreCase("on");
+    return "true".equalsIgnoreCase(s)
+        || "yes".equalsIgnoreCase(s)
+        || "on".equalsIgnoreCase(s);
   }
 
   /**
@@ -854,7 +854,7 @@ public class ConcurrentTestCommandScript
           Map<String, String> commandStateMap = lookupState(state);
           final String command;
           boolean isSql = false;
-          if (line.equals("") || line.startsWith("--")) {
+          if ("".equals(line) || line.startsWith("--")) {
             continue;
           } else if (line.startsWith("@")) {
             command = firstWord(line);
@@ -1174,7 +1174,7 @@ public class ConcurrentTestCommandScript
     }
 
     private void doEndOfState(String state) {
-      if (state.equals(PRE_SETUP_STATE)) {
+      if (PRE_SETUP_STATE.equals(state)) {
         applyVariableRebindings();
       }
     }
@@ -1371,17 +1371,17 @@ public class ConcurrentTestCommandScript
       } else {
         while (tokenizer.hasMoreTokens()) {
           String token = tokenizer.nextToken();
-          if (token.equalsIgnoreCase("none")) {
+          if ("none".equalsIgnoreCase(token)) {
             nth = 0;
-          } else if (token.equalsIgnoreCase("all")) {
+          } else if ("all".equalsIgnoreCase(token)) {
             nth = 1;
-          } else if (token.equalsIgnoreCase("total")) {
+          } else if ("total".equalsIgnoreCase(token)) {
             total = true;
-          } else if (token.equalsIgnoreCase("count")) {
+          } else if ("count".equalsIgnoreCase(token)) {
             count = true;
-          } else if (token.equalsIgnoreCase("time")) {
+          } else if ("time".equalsIgnoreCase(token)) {
             time = true;
-          } else if (token.equalsIgnoreCase("every")) {
+          } else if ("every".equalsIgnoreCase(token)) {
             nth = 1;
             if (tokenizer.hasMoreTokens()) {
               token = tokenizer.nextToken();

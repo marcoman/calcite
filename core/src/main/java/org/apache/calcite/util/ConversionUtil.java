@@ -125,11 +125,11 @@ public class ConversionUtil {
       return null;
     }
     str = str.trim();
-    if (str.equalsIgnoreCase("TRUE")) {
+    if ("TRUE".equalsIgnoreCase(str)) {
       return Boolean.TRUE;
-    } else if (str.equalsIgnoreCase("FALSE")) {
+    } else if ("FALSE".equalsIgnoreCase(str)) {
       return Boolean.FALSE;
-    } else if (str.equalsIgnoreCase("UNKNOWN")) {
+    } else if ("UNKNOWN".equalsIgnoreCase(str)) {
       return null;
     } else {
       throw RESOURCE.invalidBoolean(str).ex();

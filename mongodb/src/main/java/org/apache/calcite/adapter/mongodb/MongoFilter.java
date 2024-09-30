@@ -155,7 +155,7 @@ public class MongoFilter extends Filter implements MongoRel {
      * "&lt; 100" is a more powerful condition than "&lt; 200".
      */
     private static boolean stronger(String key, Object v0, Object v1) {
-      if (key.equals("$lt") || key.equals("$lte")) {
+      if ("$lt".equals(key) || "$lte".equals(key)) {
         if (v0 instanceof Number && v1 instanceof Number) {
           return ((Number) v0).doubleValue() < ((Number) v1).doubleValue();
         }
@@ -163,7 +163,7 @@ public class MongoFilter extends Filter implements MongoRel {
           return v0.toString().compareTo(v1.toString()) < 0;
         }
       }
-      if (key.equals("$gt") || key.equals("$gte")) {
+      if ("$gt".equals(key) || "$gte".equals(key)) {
         return stronger("$lt", v1, v0);
       }
       return false;

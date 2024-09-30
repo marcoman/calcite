@@ -115,16 +115,16 @@ public class StringUtils {
     if (str == null || str.isEmpty()) {
       return missingVal;
     }
-    if (str.equalsIgnoreCase("t")
-        || str.equalsIgnoreCase("true")
-        || str.equalsIgnoreCase("yes")
-        || str.equals("1")) {
+    if ("t".equalsIgnoreCase(str)
+        || "true".equalsIgnoreCase(str)
+        || "yes".equalsIgnoreCase(str)
+        || "1".equals(str)) {
       return true;
     }
-    if (str.equalsIgnoreCase("f")
-        || str.equalsIgnoreCase("false")
-        || str.equalsIgnoreCase("no")
-        || str.equals("0")) {
+    if ("f".equalsIgnoreCase(str)
+        || "false".equalsIgnoreCase(str)
+        || "no".equalsIgnoreCase(str)
+        || "0".equals(str)) {
       return false;
     }
     return defaultVal;

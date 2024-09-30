@@ -64,7 +64,7 @@ public class VisitorDataContext implements DataContext {
   }
 
   @Override public @Nullable Object get(String name) {
-    if (name.equals("inputRecord")) {
+    if ("inputRecord".equals(name)) {
       return values;
     } else {
       return null;

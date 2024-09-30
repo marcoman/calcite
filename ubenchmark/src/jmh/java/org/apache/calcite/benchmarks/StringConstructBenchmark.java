@@ -109,11 +109,11 @@ public class StringConstructBenchmark {
 
     private void reset() {
       nAppends = 0;
-      if (appenderType.equals("StringBuilder")) {
+      if ("StringBuilder".equals(appenderType)) {
         this.appender = new StringBuilder();
-      } else if (appenderType.equals("StringWriter")) {
+      } else if ("StringWriter".equals(appenderType)) {
         this.appender = new StringWriter();
-      } else if (appenderType.equals("PrintWriter")) {
+      } else if ("PrintWriter".equals(appenderType)) {
         this.appender = new PrintWriter(new StringWriter());
       } else {
         throw new IllegalStateException(

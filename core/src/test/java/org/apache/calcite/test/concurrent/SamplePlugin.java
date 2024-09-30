@@ -34,7 +34,7 @@ public class SamplePlugin extends ConcurrentTestPlugin {
   private static final String DESCRIBE_RESULT_SET_CMD = "@describeResultSet";
 
   public ConcurrentTestPluginCommand getCommandFor(String name, String params) {
-    if (name.equals(DESCRIBE_RESULT_SET_CMD)) {
+    if (DESCRIBE_RESULT_SET_CMD.equals(name)) {
       return new DescribeResultSet();
     }
     assert false;

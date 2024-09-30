@@ -110,7 +110,7 @@ public class CalciteConnectionConfigImpl extends ConnectionConfigImpl
       @PolyNull T defaultOperatorTable) {
     final String fun =
         CalciteConnectionProperty.FUN.wrap(properties).getString();
-    if (fun == null || fun.equals("") || fun.equals("standard")) {
+    if (fun == null || "".equals(fun) || "standard".equals(fun)) {
       return defaultOperatorTable;
     }
     // Parse the libraries
