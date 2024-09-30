@@ -129,7 +129,7 @@ public abstract class RelDataTypeImpl
     // Extra field
     if (fieldList.size() > 0) {
       final RelDataTypeField lastField = Iterables.getLast(fieldList);
-      if (lastField.getName().equals("_extra")) {
+      if ("_extra".equals(lastField.getName())) {
         return new RelDataTypeFieldImpl(
             fieldName, -1, lastField.getType());
       }

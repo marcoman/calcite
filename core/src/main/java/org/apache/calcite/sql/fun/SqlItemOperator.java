@@ -78,7 +78,7 @@ public class SqlItemOperator extends SqlSpecialOperator {
       SqlWriter writer, SqlCall call, int leftPrec, int rightPrec) {
     call.operand(0).unparse(writer, leftPrec, 0);
     final SqlWriter.Frame frame = writer.startList("[", "]");
-    if (!this.getName().equals("ITEM")) {
+    if (!"ITEM".equals(this.getName())) {
       final SqlWriter.Frame offsetFrame = writer.startFunCall(this.getName());
       call.operand(1).unparse(writer, 0, 0);
       writer.endFunCall(offsetFrame);
@@ -133,7 +133,7 @@ public class SqlItemOperator extends SqlSpecialOperator {
   }
 
   @Override public String getAllowedSignatures(String name) {
-    if (name.equals("ITEM")) {
+    if ("ITEM".equals(name)) {
       return "<ARRAY>[<INTEGER>]\n"
           + "<MAP>[<ANY>]\n"
           + "<ROW>[<CHARACTER>|<INTEGER>]";

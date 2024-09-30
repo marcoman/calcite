@@ -658,7 +658,7 @@ public class RelStructuredTypeFlattener implements ReflectiveVisitor {
     String fieldName = (fieldNames == null || fieldNames.get(i) == null)
         ? ("$" + i)
         : fieldNames.get(i);
-    if (!prefix.equals("")) {
+    if (!"".equals(prefix)) {
       fieldName = prefix + "$" + fieldName;
     }
     return fieldName;

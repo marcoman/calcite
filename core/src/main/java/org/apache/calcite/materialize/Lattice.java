@@ -1036,9 +1036,9 @@ public class Lattice {
     }
 
     private static SqlAggFunction resolveAgg(String aggName) {
-      if (aggName.equalsIgnoreCase("count")) {
+      if ("count".equalsIgnoreCase(aggName)) {
         return SqlStdOperatorTable.COUNT;
-      } else if (aggName.equalsIgnoreCase("sum")) {
+      } else if ("sum".equalsIgnoreCase(aggName)) {
         return SqlStdOperatorTable.SUM;
       } else {
         throw new RuntimeException("Unknown lattice aggregate function "

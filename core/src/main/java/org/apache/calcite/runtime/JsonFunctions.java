@@ -728,7 +728,7 @@ public class JsonFunctions {
       }
       switch (type) {
       case REPLACE:
-        if (k.equals(JSON_ROOT_PATH)) {
+        if (JSON_ROOT_PATH.equals(k)) {
           result = jsonize(v);
         } else {
           if (ctx.read(k) != null) {
@@ -737,12 +737,12 @@ public class JsonFunctions {
         }
         break;
       case INSERT:
-        if (!k.equals(JSON_ROOT_PATH) && ctx.read(k) == null) {
+        if (!JSON_ROOT_PATH.equals(k) && ctx.read(k) == null) {
           insertToJson(ctx, k, v);
         }
         break;
       case SET:
-        if (k.equals(JSON_ROOT_PATH)) {
+        if (JSON_ROOT_PATH.equals(k)) {
           result = jsonize(v);
         } else {
           if (ctx.read(k) != null) {

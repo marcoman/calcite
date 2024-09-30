@@ -928,7 +928,7 @@ public class Smalls {
       return 0L;
     }
     public long add(long accumulator, int v1, String v2) {
-      if (v2.equals("Eric")) {
+      if ("Eric".equals(v2)) {
         return accumulator + v1;
       }
       return accumulator;

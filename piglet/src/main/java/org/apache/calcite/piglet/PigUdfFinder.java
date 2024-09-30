@@ -95,7 +95,7 @@ class PigUdfFinder {
 
     Method returnedMethod = null;
     for (Method method : methods) {
-      if (method.getName().equals("exec")) {
+      if ("exec".equals(method.getName())) {
         // There may be two methods named "exec", one of them just returns a
         // Java object. We will need to look for the other one if existing.
         if (method.getReturnType() != Object.class) {

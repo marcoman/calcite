@@ -68,11 +68,11 @@ public class SqlMonotonicBinaryOperator extends SqlBinaryOperator {
     if (mono1 == SqlMonotonicity.CONSTANT) {
       // mono0 + constant --> mono0
       // mono0 - constant --> mono0
-      if (getName().equals("-")
-          || getName().equals("+")) {
+      if ("-".equals(getName())
+          || "+".equals(getName())) {
         return mono0;
       }
-      assert getName().equals("*");
+      assert "*".equals(getName());
       BigDecimal value = call.getOperandLiteralValue(1, BigDecimal.class);
       switch (value == null ? 1 : value.signum()) {
       case -1:
@@ -91,15 +91,15 @@ public class SqlMonotonicBinaryOperator extends SqlBinaryOperator {
 
     // constant <op> mono
     if (mono0 == SqlMonotonicity.CONSTANT) {
-      if (getName().equals("-")) {
+      if ("-".equals(getName())) {
         // constant - mono1 --> reverse mono1
         return mono1.reverse();
       }
-      if (getName().equals("+")) {
+      if ("+".equals(getName())) {
         // constant + mono1 --> mono1
         return mono1;
       }
-      assert getName().equals("*");
+      assert "*".equals(getName());
       if (!call.isOperandNull(0, true)) {
         BigDecimal value = call.getOperandLiteralValue(0, BigDecimal.class);
         switch (value == null ? 1 : value.signum()) {
@@ -127,7 +127,7 @@ public class SqlMonotonicBinaryOperator extends SqlBinaryOperator {
     // asc + desc --> not monotonic
     //   e.g. 2 * orderid + (-3 * orderid) is not monotonic
 
-    if (getName().equals("+")) {
+    if ("+".equals(getName())) {
       if (mono0 == mono1) {
         return mono0;
       } else if (mono0.unstrict() == mono1.unstrict()) {
@@ -136,7 +136,7 @@ public class SqlMonotonicBinaryOperator extends SqlBinaryOperator {
         return SqlMonotonicity.NOT_MONOTONIC;
       }
     }
-    if (getName().equals("-")) {
+    if ("-".equals(getName())) {
       if (mono0 == mono1.reverse()) {
         return mono0;
       } else if (mono0.unstrict() == mono1.reverse().unstrict()) {
@@ -145,7 +145,7 @@ public class SqlMonotonicBinaryOperator extends SqlBinaryOperator {
         return SqlMonotonicity.NOT_MONOTONIC;
       }
     }
-    if (getName().equals("*")) {
+    if ("*".equals(getName())) {
       return SqlMonotonicity.NOT_MONOTONIC;
     }
 

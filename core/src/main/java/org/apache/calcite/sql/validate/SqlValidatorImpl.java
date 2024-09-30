@@ -7022,7 +7022,7 @@ public class SqlValidatorImpl implements SqlValidatorWithHints {
       for (; i < id.names.size(); i++) {
         String name = id.names.get(i);
         final RelDataTypeField field;
-        if (name.equals("")) {
+        if ("".equals(name)) {
           // The wildcard "*" is represented as an empty name. It never
           // resolves to a field.
           name = "*";
