@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.test;
 
+import java.nio.file.Files;
 import org.apache.calcite.adapter.csv.CsvSchemaFactory;
 import org.apache.calcite.adapter.csv.CsvStreamTableFactory;
 import org.apache.calcite.jdbc.CalciteConnection;
@@ -960,7 +961,7 @@ class CsvTest {
 
   @Disabled("CALCITE-1894: there's a bug in the test code, so it does not test what it should")
   @Test @Timeout(10) public void testCsvStream() throws Exception {
-    final File file = File.createTempFile("stream", "csv");
+    final File file = Files.createTempFile("stream", "csv").toFile();
     final String model = "{\n"
         + "  version: '1.0',\n"
         + "  defaultSchema: 'STREAM',\n"

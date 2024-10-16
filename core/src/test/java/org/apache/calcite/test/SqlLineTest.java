@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.test;
 
+import java.nio.file.Files;
 import org.apache.calcite.util.Bug;
 import org.apache.calcite.util.Pair;
 import org.apache.calcite.util.Util;
@@ -92,7 +93,7 @@ class SqlLineTest {
       Matcher<SqlLine.Status> statusMatcher,
       Matcher<String> outputMatcher) throws Throwable {
     // Put the script content in a temp file
-    File scriptFile = File.createTempFile("foo", "temp");
+    File scriptFile = Files.createTempFile("foo", "temp").toFile();
     scriptFile.deleteOnExit();
     try (PrintWriter w = Util.printWriter(scriptFile)) {
       w.print(scriptText);
