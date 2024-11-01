@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.example.maze;
 
+import java.security.SecureRandom;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.AbstractEnumerable;
 import org.apache.calcite.linq4j.Enumerable;
@@ -88,7 +89,7 @@ public class MazeTable extends AbstractTable implements ScannableTable {
   }
 
   @Override public Enumerable<@Nullable Object[]> scan(DataContext root) {
-    final Random random = seed >= 0 ? new Random(seed) : new Random();
+    final Random random = seed >= 0 ? new Random(seed) : new SecureRandom();
     final Maze maze = new Maze(width, height);
     final PrintWriter pw = Util.printWriter(System.out);
     maze.layout(random, pw);

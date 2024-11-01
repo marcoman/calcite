@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.adapter.spark;
 
+import java.security.SecureRandom;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.adapter.enumerable.EnumerableConvention;
 import org.apache.calcite.adapter.enumerable.JavaRowFormat;
@@ -441,7 +442,7 @@ public abstract class SparkRules {
 
     final JavaRDD<Integer> rdd =
         sc.parallelize(new AbstractList<Integer>() {
-          final Random random = new Random();
+          final Random random = new SecureRandom();
           @Override public Integer get(int index) {
             System.out.println("get(" + index + ")");
             return random.nextInt(100);

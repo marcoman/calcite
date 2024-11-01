@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.runtime;
 
+import java.security.SecureRandom;
 import org.apache.calcite.linq4j.function.Deterministic;
 import org.apache.calcite.linq4j.function.Parameter;
 
@@ -41,7 +42,7 @@ public class RandomFunction {
   /** Implements the {@code RAND()} SQL function. */
   public double rand() {
     if (random == null) {
-      random = new Random();
+      random = new SecureRandom();
     }
     return random.nextDouble();
   }
@@ -57,7 +58,7 @@ public class RandomFunction {
   /** Implements the {@code RAND_INTEGER(bound)} SQL function. */
   public int randInteger(@Parameter(name = "bound") int bound) {
     if (random == null) {
-      random = new Random();
+      random = new SecureRandom();
     }
     return random.nextInt(bound);
   }

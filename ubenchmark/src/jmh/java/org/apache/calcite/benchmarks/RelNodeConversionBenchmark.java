@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.benchmarks;
 
+import java.security.SecureRandom;
 import org.apache.calcite.adapter.java.AbstractQueryableTable;
 import org.apache.calcite.config.Lex;
 import org.apache.calcite.linq4j.Enumerable;
@@ -84,7 +85,7 @@ public class RelNodeConversionBenchmark {
       // Create Sql
       StringBuilder sb = new StringBuilder();
       sb.append("select 1 ");
-      Random rnd = new Random();
+      Random rnd = new SecureRandom();
       rnd.setSeed(424242);
       for (int i = 0; i < length; i++) {
         sb.append(", ");

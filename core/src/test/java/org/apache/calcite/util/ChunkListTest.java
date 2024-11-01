@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 package org.apache.calcite.util;
+import java.security.SecureRandom;
 import org.apache.calcite.linq4j.function.Function0;
 
 import com.google.common.collect.ImmutableList;
@@ -223,7 +224,7 @@ class ChunkListTest {
         }
         break;
       case 3:
-        Random random = new Random();
+        Random random = new SecureRandom();
         for (int j = 0; j < n; j++) {
           list.remove(random.nextInt(list.size()));
         }

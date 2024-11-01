@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 package org.apache.calcite.sql.parser;
+import java.security.SecureRandom;
 import org.apache.calcite.avatica.util.Quoting;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlDialect;
@@ -9730,7 +9731,7 @@ public class SqlParserTest {
       // precedence, the problem will show up here.
       checkList(sqlNodeList2, converter, expected);
 
-      final Random random = new Random();
+      final Random random = new SecureRandom();
       final String sql3 = toSqlString(sqlNodeList, randomize(random));
       assertThat(sql3, notNullValue());
     }
@@ -9770,7 +9771,7 @@ public class SqlParserTest {
 
       // Now unparse with a randomly configured SqlPrettyWriter.
       // (This is a much a test for SqlPrettyWriter as for the parser.)
-      final Random random = new Random();
+      final Random random = new SecureRandom();
       final String sql3 = sqlNode.toSqlString(randomize(random)).getSql();
       assertThat(sql3, notNullValue());
       SqlNode sqlNode4 =

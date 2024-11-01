@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 package org.apache.calcite.rex;
+import java.security.SecureRandom;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.DataContexts;
 import org.apache.calcite.avatica.util.ByteString;
@@ -334,7 +335,7 @@ class RexExecutorTest {
     final List<Thread> threads = new ArrayList<>();
     //noinspection MismatchedQueryAndUpdateOfCollection
     final List<String> list = new RexSlot.SelfPopulatingList("$", 1);
-    final Random random = new Random();
+    final Random random = new SecureRandom();
     for (int i = 0; i < 10; i++) {
       threads.add(
           new Thread() {

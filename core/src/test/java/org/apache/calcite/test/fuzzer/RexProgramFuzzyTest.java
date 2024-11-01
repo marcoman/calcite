@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.test.fuzzer;
 
+import java.security.SecureRandom;
 import org.apache.calcite.plan.Strong;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
@@ -172,7 +173,7 @@ class RexProgramFuzzyTest extends RexProgramBuilderBase {
       checkUnknownAs(node, unknownAs);
     } catch (Exception e) {
       // Try shrink the example so human can understand it better
-      Random rnd = new Random();
+      Random rnd = new SecureRandom();
       rnd.setSeed(currentSeed);
       long deadline = System.currentTimeMillis() + 20000;
       RexNode original = node;
@@ -363,7 +364,7 @@ class RexProgramFuzzyTest extends RexProgramBuilderBase {
       return;
     }
     slowestTasks = new TopN<>(topnSlowest > 0 ? topnSlowest : 1);
-    Random r = new Random();
+    Random r = new SecureRandom();
     if (startSeed != 0) {
       LOGGER.info("Using seed {} for rex fuzzing", startSeed);
       r.setSeed(startSeed);
@@ -456,7 +457,7 @@ class RexProgramFuzzyTest extends RexProgramBuilderBase {
 
   @Disabled("This is just a scaffold for quick investigation of a single fuzz test")
   @Test void singleFuzzyTest() {
-    Random r = new Random();
+    Random r = new SecureRandom();
     r.setSeed(4887662474363391810L);
     RexFuzzer fuzzer = new RexFuzzer(rexBuilder, typeFactory);
     generateRexAndCheckTrueFalse(fuzzer, r);

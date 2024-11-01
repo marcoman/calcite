@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.benchmarks;
 
+import java.security.SecureRandom;
 import org.apache.calcite.adapter.java.ReflectiveSchema;
 import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
@@ -70,7 +71,7 @@ public class StatementTest {
     Connection con;
     int id;
     HrSchema hr = new HrSchema();
-    Random rnd = new Random();
+    Random rnd = new SecureRandom();
     {
       try {
         Class.forName("org.apache.calcite.jdbc.Driver");

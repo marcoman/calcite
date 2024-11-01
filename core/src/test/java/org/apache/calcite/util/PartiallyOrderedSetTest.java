@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 package org.apache.calcite.util;
+import java.security.SecureRandom;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
@@ -45,7 +46,7 @@ class PartiallyOrderedSetTest {
   // 100, 250, 1000, 3000 are reasonable
   private static final int SCALE = 250;
 
-  final long seed = new Random().nextLong();
+  final long seed = new SecureRandom().nextLong();
   final Random random = new Random(seed);
 
   static final PartiallyOrderedSet.Ordering<String> STRING_SUBSET_ORDERING =

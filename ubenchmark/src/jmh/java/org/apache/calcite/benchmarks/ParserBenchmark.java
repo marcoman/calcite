@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.benchmarks;
 
+import java.security.SecureRandom;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
@@ -66,7 +67,7 @@ public class ParserBenchmark {
   public void setup() throws SqlParseException {
     StringBuilder sb = new StringBuilder((int) (length * 1.2));
     sb.append("select 1");
-    Random rnd = new Random();
+    Random rnd = new SecureRandom();
     rnd.setSeed(424242);
     for (; sb.length() < length;) {
       for (int i = 0; i < 7 && sb.length() < length; i++) {
