@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.adapter.os;
 
+import io.github.pixee.security.BoundedLineReader;
 import org.apache.calcite.DataContext;
 import org.apache.calcite.linq4j.AbstractEnumerable;
 import org.apache.calcite.linq4j.Enumerable;
@@ -65,7 +66,7 @@ public class StdinTableFunction {
 
               @Override public boolean moveNext() {
                 try {
-                  line = br.readLine();
+                  line = BoundedLineReader.readLine(br, 5_000_000);
                   ++i;
                   return line != null;
                 } catch (IOException e) {

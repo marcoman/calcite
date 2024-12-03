@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.util;
 
+import io.github.pixee.security.BoundedLineReader;
 import org.apache.calcite.runtime.PairList;
 import org.apache.calcite.runtime.Unit;
 
@@ -345,11 +346,11 @@ public class Puffin {
             new ContextImpl<>(out, source, patternCache, globalState,
                 fileState);
         beforeSourceList.forEach(action -> action.accept(x));
-        String nextLine = br.readLine();
+        String nextLine = BoundedLineReader.readLine(br, 5_000_000);
         while (nextLine != null) {
           x.line = nextLine;
           ++x.fnr;
-          nextLine = br.readLine();
+          nextLine = BoundedLineReader.readLine(br, 5_000_000);
           x.last = nextLine == null;
           onLineList.forEach((predicate, action) -> {
             if (predicate.test(x)) {

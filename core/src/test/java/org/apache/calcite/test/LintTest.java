@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.test;
 
+import io.github.pixee.security.BoundedLineReader;
 import org.apache.calcite.util.Puffin;
 import org.apache.calcite.util.Source;
 import org.apache.calcite.util.Sources;
@@ -429,7 +430,7 @@ class LintTest {
   private static void forEachLineIn(File file, Consumer<String> consumer) {
     try (BufferedReader r = Util.reader(file)) {
       for (;;) {
-        String line = r.readLine();
+        String line = BoundedLineReader.readLine(r, 5_000_000);
         if (line == null) {
           break;
         }

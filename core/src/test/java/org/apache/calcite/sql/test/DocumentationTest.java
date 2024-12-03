@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.sql.test;
 
+import io.github.pixee.security.BoundedLineReader;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorTable;
@@ -63,7 +64,7 @@ class DocumentationTest {
          PrintWriter w = Util.printWriter(f.outFile)) {
       String line;
       int stage = 0;
-      while ((line = r.readLine()) != null) {
+      while ((line = BoundedLineReader.readLine(r, 5_000_000)) != null) {
         if (line.equals("{% comment %} end {% endcomment %}")) {
           ++stage;
         }

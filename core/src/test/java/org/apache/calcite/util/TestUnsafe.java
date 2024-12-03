@@ -17,6 +17,7 @@
 package org.apache.calcite.util;
 
 import com.google.common.collect.ImmutableList;
+import io.github.pixee.security.BoundedLineReader;
 
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.slf4j.Logger;
@@ -190,7 +191,7 @@ public abstract class TestUnsafe {
       try (StringReader r = new StringReader(s);
            BufferedReader br = new BufferedReader(r)) {
         for (;;) {
-          String line = br.readLine();
+          String line = BoundedLineReader.readLine(br, 5_000_000);
           if (line == null) {
             break;
           }

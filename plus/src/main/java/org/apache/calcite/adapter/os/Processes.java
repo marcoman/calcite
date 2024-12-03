@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.adapter.os;
 
+import io.github.pixee.security.BoundedLineReader;
 import org.apache.calcite.linq4j.AbstractEnumerable;
 import org.apache.calcite.linq4j.Enumerable;
 import org.apache.calcite.linq4j.Enumerator;
@@ -94,7 +95,7 @@ public class Processes {
 
         @Override public boolean moveNext() {
           try {
-            line = br.readLine();
+            line = BoundedLineReader.readLine(br, 5_000_000);
             return line != null;
           } catch (IOException e) {
             throw new RuntimeException(e);

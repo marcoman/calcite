@@ -16,6 +16,7 @@
  */
 package org.apache.calcite.test.concurrent;
 
+import io.github.pixee.security.BoundedLineReader;
 import org.apache.calcite.jdbc.SqlTimeoutException;
 import org.apache.calcite.util.TestUnsafe;
 import org.apache.calcite.util.Unsafe;
@@ -451,7 +452,7 @@ public class ConcurrentTestCommandScript
 
     try {
       String line;
-      while ((line = rdr.readLine()) != null) {
+      while ((line = BoundedLineReader.readLine(rdr, 5_000_000)) != null) {
         line = line.trim().toLowerCase(Locale.ROOT);
         if (isComment(line)) {
           continue;
@@ -604,7 +605,7 @@ public class ConcurrentTestCommandScript
 
     try {
       String line;
-      while ((line = rdr.readLine()) != null) {
+      while ((line = BoundedLineReader.readLine(rdr, 5_000_000)) != null) {
         line = line.trim();
 
         if (message.length() > 0) {
@@ -849,7 +850,7 @@ public class ConcurrentTestCommandScript
       currentDirectory.push(scriptDirectory = scriptFile.getParentFile());
       try (BufferedReader in = Util.reader(scriptFile)) {
         String line;
-        while ((line = in.readLine()) != null) {
+        while ((line = BoundedLineReader.readLine(in, 5_000_000)) != null) {
           line = line.trim();
           Map<String, String> commandStateMap = lookupState(state);
           final String command;
@@ -1291,7 +1292,7 @@ public class ConcurrentTestCommandScript
         line = line.substring(0, line.lastIndexOf('\\')); // snip
         StringBuilder buf = new StringBuilder(line);        // save
         while (more) {
-          line = in.readLine();
+          line = BoundedLineReader.readLine(in, 5_000_000);
           if (line == null) {
             break;
           }
@@ -1324,7 +1325,7 @@ public class ConcurrentTestCommandScript
 
       String line;
       if (!startOfSql.trim().endsWith(";")) {
-        while ((line = in.readLine()) != null) {
+        while ((line = BoundedLineReader.readLine(in, 5_000_000)) != null) {
           sql.append(line).append('\n');
           if (line.trim().endsWith(";")) {
             break;
