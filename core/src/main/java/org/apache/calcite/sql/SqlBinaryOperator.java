@@ -96,7 +96,7 @@ public class SqlBinaryOperator extends SqlOperator {
    * </blockquote>
    */
   @Override boolean needsSpace() {
-    return !getName().equals(".");
+    return !".".equals(getName());
   }
 
   @Override public @Nullable SqlOperator reverse() {
@@ -180,7 +180,7 @@ public class SqlBinaryOperator extends SqlOperator {
   }
 
   @Override public SqlMonotonicity getMonotonicity(SqlOperatorBinding call) {
-    if (getName().equals("/")) {
+    if ("/".equals(getName())) {
       if (call.isOperandNull(0, true)
           || call.isOperandNull(1, true)) {
         // null result => CONSTANT monotonicity

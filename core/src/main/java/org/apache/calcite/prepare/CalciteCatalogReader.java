@@ -193,7 +193,7 @@ public class CalciteCatalogReader implements Prepare.CatalogReader {
     final ImmutableList.Builder<SqlMoniker> result = new ImmutableList.Builder<>();
 
     // Add root schema if not anonymous
-    if (!schema.name.equals("")) {
+    if (!"".equals(schema.name)) {
       result.add(moniker(schema, null, SqlMonikerType.SCHEMA));
     }
 
@@ -218,7 +218,7 @@ public class CalciteCatalogReader implements Prepare.CatalogReader {
       SqlMonikerType type) {
     final List<String> path = schema.path(name);
     if (path.size() == 1
-        && !schema.root().name.equals("")
+        && !"".equals(schema.root().name)
         && type == SqlMonikerType.SCHEMA) {
       type = SqlMonikerType.CATALOG;
     }

@@ -239,7 +239,7 @@ public abstract class CalciteSchema {
       list.add(name);
     }
     for (CalciteSchema s = this; s != null; s = s.parent) {
-      if (s.parent != null || !s.name.equals("")) {
+      if (s.parent != null || !"".equals(s.name)) {
         // Omit the root schema's name from the path if it's the empty string,
         // which it usually is.
         list.add(s.name);

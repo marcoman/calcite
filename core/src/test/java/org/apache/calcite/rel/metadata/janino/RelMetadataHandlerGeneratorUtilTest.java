@@ -152,7 +152,7 @@ class RelMetadataHandlerGeneratorUtilTest {
         nameAndGeneratedCode.getGeneratedCode());
     String expected = readResource(resourcePath);
     assert !expected.contains("\r") : "Expected code should not contain \\r";
-    assert !nameAndGeneratedCode.getGeneratedCode().equals("\r")
+    assert !"\r".equals(nameAndGeneratedCode.getGeneratedCode())
         : "Generated code should not contain \\r";
     assertEquals(expected, nameAndGeneratedCode.getGeneratedCode());
   }

@@ -203,7 +203,7 @@ public class BigQuerySqlDialect extends SqlDialect {
       unparseTrim(writer, call, leftPrec, rightPrec);
       break;
     case ITEM:
-      if (call.getOperator().getName().equals("ITEM")) {
+      if ("ITEM".equals(call.getOperator().getName())) {
         throw new RuntimeException("BigQuery requires an array subscript operator"
             + " to index an array");
       }

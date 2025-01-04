@@ -440,7 +440,7 @@ public final class SqlParserUtil {
 
   public static SqlIntervalLiteral parseIntervalLiteral(SqlParserPos pos,
       int sign, String s, SqlIntervalQualifier intervalQualifier) {
-    if (s.equals("")) {
+    if ("".equals(s)) {
       throw SqlUtil.newContextException(pos,
           RESOURCE.illegalIntervalLiteral(s + " "
               + intervalQualifier.toString(), pos.toString()));
@@ -998,7 +998,7 @@ public final class SqlParserUtil {
     for (int i = expectedTokenSequences.length - 1; i >= 0; i--) {
       int[] expectedTokenSequence = expectedTokenSequences[i];
       for (int j = expectedTokenSequence.length - 1; j >= 0; j--) {
-        if (tokenImage[expectedTokenSequence[j]].equals("<IDENTIFIER>")) {
+        if ("<IDENTIFIER>".equals(tokenImage[expectedTokenSequence[j]])) {
           return true;
         }
       }

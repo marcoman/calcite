@@ -171,7 +171,7 @@ public class ClickHouseSqlDialect extends SqlDialect {
       // https://github.com/yandex/ClickHouse/issues/2494
       // Wrap the call in a CH specific coalesce (assumeNotNull).
       if (call.getFunctionQuantifier() != null
-          && call.getFunctionQuantifier().toString().equals("DISTINCT")) {
+          && "DISTINCT".equals(call.getFunctionQuantifier().toString())) {
         writer.print("assumeNotNull");
         SqlWriter.Frame frame = writer.startList("(", ")");
         super.unparseCall(writer, call, leftPrec, rightPrec);

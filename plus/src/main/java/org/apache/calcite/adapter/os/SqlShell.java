@@ -149,7 +149,7 @@ public class SqlShell {
     try (Enumerator<String> args =
              Linq4j.asEnumerable(this.args).enumerator()) {
       while (args.moveNext()) {
-        if (args.current().equals("-o")) {
+        if ("-o".equals(args.current())) {
           if (args.moveNext()) {
             String formatString = args.current();
             try {
@@ -160,8 +160,8 @@ public class SqlShell {
           } else {
             throw new RuntimeException("missing format");
           }
-        } else if (args.current().equals("-h")
-            || args.current().equals("--help")) {
+        } else if ("-h".equals(args.current())
+            || "--help".equals(args.current())) {
           out.println(help);
           return;
         } else {
@@ -186,7 +186,7 @@ public class SqlShell {
 
 
   private static void addView(StringBuilder b, String name, String sql) {
-    if (!name.equals("du")) { // we know that "du" is the first
+    if (!"du".equals(name)) { // we know that "du" is the first
       b.append("}, {\n");
     }
     b.append("         \"name\": \"")
@@ -200,7 +200,7 @@ public class SqlShell {
   }
 
   private static void addFunction(StringBuilder b, String name, Class c) {
-    if (!name.equals("du")) { // we know that "du" is the first
+    if (!"du".equals(name)) { // we know that "du" is the first
       b.append("}, {\n");
     }
     b.append("         \"name\": \"")

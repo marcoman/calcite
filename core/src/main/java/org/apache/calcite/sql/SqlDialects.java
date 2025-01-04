@@ -131,7 +131,7 @@ public final class SqlDialects {
 
   private static boolean isBigQuery(DatabaseMetaData databaseMetaData)
       throws SQLException {
-    return databaseMetaData.getDatabaseProductName()
-        .equals("Google Big Query");
+    return "Google Big Query"
+        .equals(databaseMetaData.getDatabaseProductName());
   }
 }

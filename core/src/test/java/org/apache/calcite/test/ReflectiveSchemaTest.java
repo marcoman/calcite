@@ -446,7 +446,7 @@ public class ReflectiveSchemaTest {
 
   private void checkAgg(CalciteAssert.AssertThat with, String fn) {
     for (final Field field
-        : fn.equals("avg") ? EveryType.numericFields() : EveryType.fields()) {
+        : "avg".equals(fn) ? EveryType.numericFields() : EveryType.fields()) {
       with.query(
           "select " + fn + "(\"" + field.getName() + "\") as c\n"
               + "from \"s\".\"everyTypes\"")

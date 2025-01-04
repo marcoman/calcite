@@ -676,10 +676,10 @@ class UtilTest {
     String posixTime =
         Util.toPosix(TimeZone.getTimeZone("Australia/Sydney"), true);
 
-    if (posixTime.equals("EST10EST1,M10.5.0/2,M3.5.0/3")) {
+    if ("EST10EST1,M10.5.0/2,M3.5.0/3".equals(posixTime)) {
       // very old JVMs without the fix
       assertEquals("EST10EST1,M10.5.0/2,M3.5.0/3", posixTime);
-    } else if (posixTime.equals("EST10EST1,M10.1.0/2,M4.1.0/3")) {
+    } else if ("EST10EST1,M10.1.0/2,M4.1.0/3".equals(posixTime)) {
       // old JVMs without the fix
       assertEquals("EST10EST1,M10.1.0/2,M4.1.0/3", posixTime);
     } else {
@@ -1592,7 +1592,7 @@ class UtilTest {
     for (int i = 0; i < list.size(); i++) {
       final List<Object> outer = list.get(i);
       for (List<Object> inner : list) {
-        if (inner.toString().equals("[A, B, C,D]")) {
+        if ("[A, B, C,D]".equals(inner.toString())) {
           System.out.println(1);
         }
         boolean strEq = outer.toString().equals(inner.toString());

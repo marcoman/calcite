@@ -350,16 +350,16 @@ public abstract class DiffTestCase {
         stackTrace[stackTrace.length - 1];
 
     // Junit test launched from IntelliJ 6.0
-    if (lastStackTraceElement.getClassName().equals(
-        "com.intellij.rt.execution.junit.JUnitStarter")
-        && lastStackTraceElement.getMethodName().equals("main")) {
+    if ("com.intellij.rt.execution.junit.JUnitStarter".equals
+        (lastStackTraceElement.getClassName())
+        && "main".equals(lastStackTraceElement.getMethodName())) {
       return true;
     }
 
     // Application launched from IntelliJ 6.0
-    if (lastStackTraceElement.getClassName().equals(
-        "com.intellij.rt.execution.application.AppMain")
-        && lastStackTraceElement.getMethodName().equals("main")) {
+    if ("com.intellij.rt.execution.application.AppMain".equals
+        (lastStackTraceElement.getClassName())
+        && "main".equals(lastStackTraceElement.getMethodName())) {
       return true;
     }
     return false;

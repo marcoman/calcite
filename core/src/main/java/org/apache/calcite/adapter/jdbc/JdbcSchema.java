@@ -339,7 +339,7 @@ public class JdbcSchema implements Schema, Wrapper {
       }
     }
     if ((catalog == null || schema == null)
-        && metaData.getDatabaseProductName().equals("PostgreSQL")) {
+        && "PostgreSQL".equals(metaData.getDatabaseProductName())) {
       final String sql = "select current_database(), current_schema()";
       try (Statement statement = connection.createStatement();
            ResultSet resultSet = statement.executeQuery(sql)) {

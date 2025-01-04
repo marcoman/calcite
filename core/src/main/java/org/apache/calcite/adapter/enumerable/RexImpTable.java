@@ -4108,7 +4108,7 @@ public class RexImpTable {
       // "Long.valueOf(x)" generates "x"
       if (argValue instanceof MethodCallExpression) {
         MethodCallExpression mce = (MethodCallExpression) argValue;
-        if (mce.method.getName().equals("valueOf") && mce.expressions.size() == 1) {
+        if ("valueOf".equals(mce.method.getName()) && mce.expressions.size() == 1) {
           Expression originArg = mce.expressions.get(0);
           if (Primitive.of(originArg.type) == fromBox) {
             return originArg;

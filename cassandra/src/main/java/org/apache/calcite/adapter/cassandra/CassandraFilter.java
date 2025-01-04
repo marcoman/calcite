@@ -286,7 +286,7 @@ public class CassandraFilter extends Filter implements CassandraRel {
     /** Combines a field name, operator, and literal to produce a predicate string. */
     private String translateOp2(String op, String name, RexLiteral right) {
       // In case this is a key, record that it is now restricted
-      if (op.equals("=")) {
+      if ("=".equals(op)) {
         partitionKeys.remove(name);
         if (clusteringKeys.contains(name)) {
           restrictedClusteringKeys++;

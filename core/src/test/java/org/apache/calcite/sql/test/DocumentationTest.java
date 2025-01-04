@@ -64,13 +64,13 @@ class DocumentationTest {
       String line;
       int stage = 0;
       while ((line = r.readLine()) != null) {
-        if (line.equals("{% comment %} end {% endcomment %}")) {
+        if ("{% comment %} end {% endcomment %}".equals(line)) {
           ++stage;
         }
         if (stage != 1) {
           w.println(line);
         }
-        if (line.equals("{% comment %} start {% endcomment %}")) {
+        if ("{% comment %} start {% endcomment %}".equals(line)) {
           ++stage;
           SqlAbstractParserImpl.Metadata metadata =
               new SqlParserTest().fixture().parser().getMetadata();
@@ -149,7 +149,7 @@ class DocumentationTest {
   private void addOperators(Map<String, PatternOp> map, String prefix,
       List<SqlOperator> operatorList) {
     for (SqlOperator op : operatorList) {
-      final String name = op.getName().equals("TRANSLATE3") ? "TRANSLATE"
+      final String name = "TRANSLATE3".equals(op.getName()) ? "TRANSLATE"
           : op.getName();
       if (op instanceof SqlSpecialOperator
           || !name.matches("^[a-zA-Z][a-zA-Z0-9_]*$")) {

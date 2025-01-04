@@ -365,7 +365,7 @@ public class JdbcFrontLinqBackTest {
             // FIXME: watch out for recursion
             final Type fieldType = field.getType();
             final RelDataType relType =
-                withMeasures && field.getName().equals("salary")
+                withMeasures && "salary".equals(field.getName())
                     ? javaTypeFactory.createMeasureType(
                         javaTypeFactory.createSqlType(SqlTypeName.FLOAT))
                     : javaTypeFactory.createType(fieldType);
