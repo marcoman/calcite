@@ -2127,7 +2127,7 @@ public abstract class RelOptUtil {
       SqlExplainLevel detailLevel) {
     StringWriter sw = new StringWriter();
     PrintWriter pw = new PrintWriter(sw);
-    if (!header.equals("")) {
+    if (!"".equals(header)) {
       pw.println(header);
     }
     RelWriter planWriter;

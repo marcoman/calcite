@@ -65,7 +65,7 @@ public class SplunkDriver extends org.apache.calcite.jdbc.Driver {
         throw new IllegalArgumentException(
             "Must specify 'url' property");
       }
-      if (url1.equals("mock")) {
+      if ("mock".equals(url1)) {
         splunkConnection = new MockSplunkConnection();
       } else {
         String user = info.getProperty("user");

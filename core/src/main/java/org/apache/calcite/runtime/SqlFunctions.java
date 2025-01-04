@@ -1664,7 +1664,7 @@ public class SqlFunctions {
     /** SQL {@code PARSE_URL(urlStr, partToExtract, keyToExtract)} function. */
     public @Nullable String parseUrl(String urlStr, String partToExtract,
         String keyToExtract) {
-      if (!partToExtract.equals("QUERY")) {
+      if (!"QUERY".equals(partToExtract)) {
         return null;
       }
 
@@ -3771,7 +3771,7 @@ public class SqlFunctions {
   /** CAST(DECIMAL AS VARCHAR). */
   public static String toString(BigDecimal x) {
     final String s = x.toString();
-    if (s.equals("0")) {
+    if ("0".equals(s)) {
       return s;
     } else if (s.startsWith("0.")) {
       // we want ".1" not "0.1"

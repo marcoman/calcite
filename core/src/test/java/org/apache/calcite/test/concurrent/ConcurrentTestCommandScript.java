@@ -854,7 +854,7 @@ public class ConcurrentTestCommandScript
           Map<String, String> commandStateMap = lookupState(state);
           final String command;
           boolean isSql = false;
-          if (line.equals("") || line.startsWith("--")) {
+          if ("".equals(line) || line.startsWith("--")) {
             continue;
           } else if (line.startsWith("@")) {
             command = firstWord(line);
@@ -1174,7 +1174,7 @@ public class ConcurrentTestCommandScript
     }
 
     private void doEndOfState(String state) {
-      if (state.equals(PRE_SETUP_STATE)) {
+      if (PRE_SETUP_STATE.equals(state)) {
         applyVariableRebindings();
       }
     }

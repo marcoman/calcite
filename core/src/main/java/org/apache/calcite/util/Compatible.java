@@ -43,7 +43,7 @@ public interface Compatible {
       return (Compatible) Proxy.newProxyInstance(
           Compatible.class.getClassLoader(),
           new Class<?>[] {Compatible.class}, (proxy, method, args) -> {
-            if (method.getName().equals("lookupPrivate")) {
+            if ("lookupPrivate".equals(method.getName())) {
               // Use MethodHandles.privateLookupIn if it is available (JDK 9
               // and above)
               @SuppressWarnings("rawtypes")

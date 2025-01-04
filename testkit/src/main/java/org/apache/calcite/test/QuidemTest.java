@@ -253,7 +253,7 @@ public abstract class QuidemTest {
     @Override public Connection connect(String name, boolean reference)
         throws Exception {
       if (reference) {
-        if (name.equals("foodmart")) {
+        if ("foodmart".equals(name)) {
           final ConnectionSpec db =
               CalciteAssert.DatabaseInstance.HSQLDB.foodmart;
           final Connection connection =

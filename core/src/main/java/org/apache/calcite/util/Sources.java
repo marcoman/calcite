@@ -98,7 +98,7 @@ public abstract class Sources {
   }
 
   private static boolean isFile(Source source) {
-    return source.protocol().equals("file");
+    return "file".equals(source.protocol());
   }
 
   /** Adapter for {@link CharSource}. */

@@ -166,7 +166,7 @@ public class ReflectiveSchema
     for (Method method : clazz.getMethods()) {
       final String methodName = method.getName();
       if (method.getDeclaringClass() == Object.class
-          || methodName.equals("toString")) {
+          || "toString".equals(methodName)) {
         continue;
       }
       if (TranslatableTable.class.isAssignableFrom(method.getReturnType())) {

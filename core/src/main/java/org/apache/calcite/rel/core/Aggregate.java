@@ -365,7 +365,7 @@ public abstract class Aggregate extends SingleRel implements Hintable {
     // Aggregates with more aggregate functions cost a bit more
     float multiplier = 1f + (float) aggCalls.size() * 0.125f;
     for (AggregateCall aggCall : aggCalls) {
-      if (aggCall.getAggregation().getName().equals("SUM")) {
+      if ("SUM".equals(aggCall.getAggregation().getName())) {
         // Pretend that SUM costs a little bit more than $SUM0,
         // to make things deterministic.
         multiplier += 0.0125f;

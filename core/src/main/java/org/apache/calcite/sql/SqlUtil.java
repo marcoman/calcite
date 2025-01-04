@@ -418,7 +418,7 @@ public abstract class SqlUtil {
         writer.sep(".");
         final String name = identifier.names.get(i);
         final SqlParserPos pos = identifier.getComponentParserPosition(i);
-        if (name.equals("")) {
+        if ("".equals(name)) {
           writer.print("*");
           writer.setNeedWhitespace(true);
         } else {

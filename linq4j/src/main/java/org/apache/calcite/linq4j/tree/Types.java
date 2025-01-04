@@ -223,7 +223,7 @@ public abstract class Types {
     String className = clazz.getName();
     if (!clazz.isPrimitive()
         && clazz.getPackage() != null
-        && clazz.getPackage().getName().equals("java.lang")) {
+        && "java.lang".equals(clazz.getPackage().getName())) {
       return className.substring("java.lang.".length());
     }
     return className.replace('$', '.');

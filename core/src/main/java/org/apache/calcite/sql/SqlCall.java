@@ -222,7 +222,7 @@ public abstract class SqlCall extends SqlNode {
    */
   public boolean isCountStar() {
     SqlOperator sqlOperator = getOperator();
-    if (sqlOperator.getName().equals("COUNT")
+    if ("COUNT".equals(sqlOperator.getName())
         && operandCount() == 1) {
       final SqlNode parm = operand(0);
       if (parm instanceof SqlIdentifier) {

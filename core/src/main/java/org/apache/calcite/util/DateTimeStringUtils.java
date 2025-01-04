@@ -93,11 +93,11 @@ public class DateTimeStringUtils {
   }
 
   static boolean isValidTimeZone(final String timeZone) {
-    if (timeZone.equals("GMT")) {
+    if ("GMT".equals(timeZone)) {
       return true;
     } else {
       String id = TimeZone.getTimeZone(timeZone).getID();
-      if (!id.equals("GMT")) {
+      if (!"GMT".equals(id)) {
         return true;
       }
     }
