@@ -89,6 +89,8 @@ import org.apache.calcite.rel.rules.PushProjector;
 import org.apache.calcite.rel.rules.ReduceExpressionsRule;
 import org.apache.calcite.rel.rules.ReduceExpressionsRule.ProjectReduceExpressionsRule;
 import org.apache.calcite.rel.rules.SingleValuesOptimizationRules;
+import org.apache.calcite.rel.rules.SortProjectTransposeRule;
+import org.apache.calcite.rel.rules.SortUnionTransposeRule;
 import org.apache.calcite.rel.rules.SpatialRules;
 import org.apache.calcite.rel.rules.UnionMergeRule;
 import org.apache.calcite.rel.rules.ValuesReduceRule;
@@ -151,9 +153,10 @@ import java.util.function.Predicate;
 
 import static org.apache.calcite.test.SqlToRelTestBase.NL;
 
+import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.sameInstance;
 import static org.hamcrest.MatcherAssert.assertThat;
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -344,6 +347,22 @@ class RelOptRulesTest extends RelOptTestBase {
   }
 
   /**
+   * Test case for <a href="https://issues.apache.org/jira/projects/CALCITE/issues/CALCITE-6746">
+   * [CALCITE-6746] Optimization rule ProjectWindowTranspose is unsound</a>. */
+  @Test void testConstantWindow() {
+    final String sql = "with empsalary(dept, empno, salary, enroll_date) as "
+        + "(VALUES ('x', 10, 5200, DATE '2007-08-01'), (NULL, NULL, NULL, NULL))\n"
+        + "select sum(salary) "
+        + "OVER (order by enroll_date range between INTERVAL 365 DAYS preceding and "
+        + "INTERVAL 365 DAYS following),\n"
+        + "salary, enroll_date FROM empsalary";
+    sql(sql)
+        .withPreRule(CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW)
+        .withRule(CoreRules.PROJECT_WINDOW_TRANSPOSE)
+        .checkUnchanged();
+  }
+
+  /**
    * Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-5813">[CALCITE-5813]
    * Type inference for sql functions REPEAT, SPACE, XML_TRANSFORM,
@@ -493,11 +512,11 @@ class RelOptRulesTest extends RelOptTestBase {
           filter.getTraitSet().getTrait(RelCollationTraitDef.INSTANCE);
       assertNotNull(collation);
       List<RelFieldCollation> fieldCollations = collation.getFieldCollations();
-      assertEquals(1, fieldCollations.size());
+      assertThat(fieldCollations, hasSize(1));
       RelFieldCollation fieldCollation = fieldCollations.get(0);
-      assertEquals(3, fieldCollation.getFieldIndex());
-      assertEquals(RelFieldCollation.Direction.DESCENDING,
-          fieldCollation.getDirection());
+      assertThat(fieldCollation.getFieldIndex(), is(3));
+      assertThat(fieldCollation.getDirection(),
+          is(RelFieldCollation.Direction.DESCENDING));
     }
   }
 
@@ -1885,7 +1904,7 @@ class RelOptRulesTest extends RelOptTestBase {
         .check();
   }
 
-  @Test void testSemiJoinTrim() throws Exception {
+  @Test void testSemiJoinTrim() {
     final String sql = "select s.deptno\n"
         + "from (select *\n"
         + "  from dept\n"
@@ -2409,6 +2428,24 @@ class RelOptRulesTest extends RelOptTestBase {
         + " SUM(sal) FILTER (WHERE sal > 1000),\n"
         + " SUM(sal) WITHIN DISTINCT (job)\n"
         + "FROM emp\n"
+        + "GROUP BY deptno";
+    HepProgram program = new HepProgramBuilder()
+        .addRuleInstance(CoreRules.AGGREGATE_REDUCE_FUNCTIONS)
+        .addRuleInstance(CoreRules.AGGREGATE_EXPAND_WITHIN_DISTINCT)
+        .build();
+    sql(sql).withProgram(program).check();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6595">[CALCITE-6595]
+   * Preserve collation for non-distinct aggregate calls with AggregateExpandWithinDistinctRule</a>.
+   *
+   * <p>Test that AggregateExpandWithinDistinctRule preserves collation on non-distinct aggregates
+   * with a WITHIN GROUP clause in a query that also includes a distinct aggregate. */
+  @Test void testWithinDistinctPreservesNonDistinctCollation() {
+    final String sql = "SELECT SUM(sal) WITHIN DISTINCT (job),\n"
+        + "LISTAGG(ename, '; ') WITHIN GROUP (ORDER BY sal DESC)\n"
+        + " FROM Emp\n"
         + "GROUP BY deptno";
     HepProgram program = new HepProgramBuilder()
         .addRuleInstance(CoreRules.AGGREGATE_REDUCE_FUNCTIONS)
@@ -3070,6 +3107,19 @@ class RelOptRulesTest extends RelOptTestBase {
         .check();
   }
 
+  /** Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-6639">[CALCITE-6639]
+   * Optimization that pulls up predicates causes ASOF JOIN validation failures</a>. */
+  @Test void testAsofOpt() {
+    final String sql = "SELECT *\n"
+        + "FROM (VALUES (NULL, 0), (1, NULL), (1, 0), (1, 1), (1, 2), "
+        + "(1, 3), (1, 4), (2, 3), (3, 4)) AS t1(k, t)\n"
+        + "ASOF JOIN (VALUES (1, NULL), (1, 2), (1, 3), (2, 10), (2, 0)) AS t2(k, t)\n"
+        + "MATCH_CONDITION t2.t < t1.t\n"
+        + "ON t1.k = t2.k\n";
+    sql(sql).withRule(CoreRules.PROJECT_REDUCE_EXPRESSIONS)
+        .checkUnchanged();
+  }
+
   /** Tests to see if the final branch of union is missed. */
   @Test void testUnionMergeRule() {
     final String sql = "select * from (\n"
@@ -3094,6 +3144,15 @@ class RelOptRulesTest extends RelOptTestBase {
   }
 
   /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6617">[CALCITE-6617]
+   * TypeCoercion is not applied correctly to comparisons</a>. */
+  @Test void testRand() {
+    final String sql = "SELECT * FROM (SELECT 1, ROUND(RAND()) AS A)\n"
+        + "WHERE A BETWEEN 1 AND 10 OR A IN (1, 2, 3, 4, 5, 6, 7, 8, 9, 10)";
+    sql(sql).withRule(CoreRules.PROJECT_REDUCE_EXPRESSIONS).check();
+  }
+
+  /** Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-6481">[CALCITE-6481]
    * Optimize 'VALUES...UNION...VALUES' to a single 'VALUES' the IN-list contains CAST
    * and it is converted to VALUES</a>. */
@@ -3105,7 +3164,10 @@ class RelOptRulesTest extends RelOptTestBase {
         + "from t1\n"
         + "where (t1.a, t1.y) in ((1, 2), (3, null), (7369, null), (7499, 30), (null, 20), (null, 5))";
     sql(sql)
-        .withRule(CoreRules.UNION_TO_VALUES)
+        .withExpand(true)
+        .withRelBuilderConfig(b -> b.withSimplifyValues(false))
+        .withRule(CoreRules.PROJECT_VALUES_MERGE,
+            CoreRules.UNION_TO_VALUES)
         .withInSubQueryThreshold(0)
         .check();
   }
@@ -3118,7 +3180,10 @@ class RelOptRulesTest extends RelOptTestBase {
         + "from t1\n"
         + "where (t1.a, t1.y) in ((cast(1.1 as int), 2), (3, null), (7369, null), (7499, 30), (null, cast(20.2 as int)), (null, 5))";
     sql(sql)
-        .withRule(CoreRules.UNION_TO_VALUES)
+        .withExpand(true)
+        .withRelBuilderConfig(b -> b.withSimplifyValues(false))
+        .withRule(CoreRules.PROJECT_VALUES_MERGE,
+            CoreRules.UNION_TO_VALUES)
         .withInSubQueryThreshold(0)
         .check();
   }
@@ -3126,7 +3191,10 @@ class RelOptRulesTest extends RelOptTestBase {
   @Test void testUnionToValuesByInList3() {
     final String sql = "select * from dept where deptno in (12, 34, cast(56.4 as int))";
     sql(sql)
-        .withRule(CoreRules.UNION_TO_VALUES)
+        .withExpand(true)
+        .withRelBuilderConfig(b -> b.withSimplifyValues(false))
+        .withRule(CoreRules.PROJECT_VALUES_MERGE,
+            CoreRules.UNION_TO_VALUES)
         .withInSubQueryThreshold(0)
         .check();
   }
@@ -3134,7 +3202,10 @@ class RelOptRulesTest extends RelOptTestBase {
   @Test void testUnionToValuesByInList4() {
     final String sql = "select * from dept where deptno in (12, 34, cast(56.4 as double))";
     sql(sql)
-        .withRule(CoreRules.UNION_TO_VALUES)
+        .withExpand(true)
+        .withRelBuilderConfig(b -> b.withSimplifyValues(false))
+        .withRule(CoreRules.PROJECT_VALUES_MERGE,
+            CoreRules.UNION_TO_VALUES)
         .withInSubQueryThreshold(0)
         .check();
   }
@@ -3142,7 +3213,10 @@ class RelOptRulesTest extends RelOptTestBase {
   @Test void testUnionToValuesByInList5() {
     final String sql = "select deptno in (12, 34, cast(56.4 as double)) from dept";
     sql(sql)
-        .withRule(CoreRules.UNION_TO_VALUES)
+        .withExpand(true)
+        .withRelBuilderConfig(b -> b.withSimplifyValues(false))
+        .withRule(CoreRules.PROJECT_VALUES_MERGE,
+            CoreRules.UNION_TO_VALUES)
         .withInSubQueryThreshold(0)
         .check();
   }
@@ -3178,7 +3252,10 @@ class RelOptRulesTest extends RelOptTestBase {
         + "select *\n"
         + "from (values (5)) as t(y)";
     sql(sql)
-        .withRule(CoreRules.PROJECT_REMOVE, CoreRules.UNION_TO_VALUES)
+        .withRule(
+            CoreRules.PROJECT_REMOVE,
+            CoreRules.PROJECT_VALUES_MERGE,
+            CoreRules.UNION_TO_VALUES)
         .withInSubQueryThreshold(0)
         .check();
   }
@@ -3226,7 +3303,9 @@ class RelOptRulesTest extends RelOptTestBase {
         + "select *\n"
         + "from (values (5)) as t(y)";
     sql(sql)
-        .withRule(CoreRules.PROJECT_REMOVE, CoreRules.UNION_TO_VALUES)
+        .withRule(CoreRules.PROJECT_REMOVE,
+            CoreRules.PROJECT_VALUES_MERGE,
+            CoreRules.UNION_TO_VALUES)
         .withInSubQueryThreshold(0)
         .check();
   }
@@ -3338,6 +3417,33 @@ class RelOptRulesTest extends RelOptTestBase {
         + "select * from emp where deptno = 30\n";
     sql(sql)
         .withRule(CoreRules.UNION_MERGE)
+        .check();
+  }
+
+  /** Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-2067">
+   * [CALCITE-2067] RexLiteral cannot represent accurately floating point values,
+   * including NaN, Infinity</a>. */
+  @Test public void testDoubleReduction() {
+    // Without the fix for CALCITE-2067 the result returned below is
+    // 1008618.49.  Ironically, that result is more accurate; however
+    // it is not the result returned by the pow() function, which is
+    // 1008618.4899999999
+    final String sql = "SELECT power(1004.3, 2)";
+    sql(sql)
+        .withRule(CoreRules.PROJECT_REDUCE_EXPRESSIONS)
+        .check();
+  }
+
+  /** Test case for <a href="https://issues.apache.org/jira/browse/CALCITE-2067">
+   * [CALCITE-2067] RexLiteral cannot represent accurately floating point values,
+   * including NaN, Infinity</a>. */
+  @Test public void testDoubleReduction2() {
+    // Without the fix for CALCITE-2067 the following expression is not
+    // reduced to Infinity, since Infinity cannot be represented
+    // as a BigDecimal value.
+    final String sql2 = "SELECT 1.0 / 0.0e0";
+    sql(sql2)
+        .withRule(CoreRules.PROJECT_REDUCE_EXPRESSIONS)
         .check();
   }
 
@@ -4967,6 +5073,52 @@ class RelOptRulesTest extends RelOptTestBase {
   }
 
   /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6650">[CALCITE-6650]
+   * Optimize the IN sub-query and SOME sub-query
+   * by Metadata RowCount</a>. */
+  @Test void testInWithNoRowSubQuery() {
+    final String sql = "select * from dept as d\n"
+        + "where deptno in (\n"
+        + "  select deptno from emp e where false)";
+    sql(sql).withSubQueryRules().check();
+  }
+
+  @Test void testNotInWithNoRowSubQuery() {
+    final String sql = "select * from dept as d\n"
+        + "where deptno not in (\n"
+        + "  select deptno from emp e where false)";
+    sql(sql).withSubQueryRules().check();
+  }
+
+  @Test void testSomeWithGreaterThanNoRowSubQuery() {
+    final String sql = "select * from dept as d\n"
+        + "where deptno > some(\n"
+        + "  select deptno from emp e where false)";
+    sql(sql).withSubQueryRules().check();
+  }
+
+  @Test void testSomeWithLessThanOrEqualNoRowSubQuery() {
+    final String sql = "select * from dept as d\n"
+        + "where deptno <= some(\n"
+        + "  select deptno from emp e where false)";
+    sql(sql).withSubQueryRules().check();
+  }
+
+  @Test void testUniqueWithNoRowSubQuery() {
+    final String sql = "select * from dept as d\n"
+        + "where unique(\n"
+        + "  select deptno from emp e where false)";
+    sql(sql).withSubQueryRules().check();
+  }
+
+  @Test void testNotUniqueWithNoRowSubQuery() {
+    final String sql = "select * from dept as d\n"
+        + "where not unique(\n"
+        + "  select deptno from emp e where false)";
+    sql(sql).withSubQueryRules().check();
+  }
+
+  /** Test case for
    * <a href="https://issues.apache.org/jira/browse/CALCITE-4848">[CALCITE-4848]
    * Adding a HAVING condition to a query with a dynamic parameter makes the result always empty
    </a>. */
@@ -4980,6 +5132,31 @@ class RelOptRulesTest extends RelOptTestBase {
         + "GROUP BY sal HAVING sal < 1000";
     sql(sql).withPlanner(hepPlanner)
         .checkUnchanged();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6647">[CALCITE-6647]
+   * SortUnionTransposeRule should not push SORT past a UNION when SORT's fetch is DynamicParam
+   </a>. */
+  @Test void testSortWithDynamicParam() {
+    HepProgramBuilder builder = new HepProgramBuilder();
+    builder.addRuleClass(SortProjectTransposeRule.class);
+    builder.addRuleClass(SortUnionTransposeRule.class);
+    HepPlanner hepPlanner = new HepPlanner(builder.build());
+    hepPlanner.addRule(CoreRules.SORT_PROJECT_TRANSPOSE);
+    hepPlanner.addRule(CoreRules.SORT_UNION_TRANSPOSE);
+    final String sql = "SELECT x.sal\n"
+        + "FROM (SELECT emp1.sal\n"
+        + "      FROM (SELECT sal\n"
+        + "            from emp\n"
+        + "            LIMIT ?) AS emp1\n"
+        + "      UNION ALL\n"
+        + "      SELECT emp2.sal\n"
+        + "      FROM (SELECT sal\n"
+        + "            from emp\n"
+        + "            LIMIT ?) AS emp2) AS x\n"
+        + "LIMIT ?";
+    sql(sql).withPlanner(hepPlanner).check();
   }
 
   @Test void testReduceCasts() {
@@ -5241,6 +5418,21 @@ class RelOptRulesTest extends RelOptTestBase {
     basePullConstantTroughAggregate();
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6586">[CALCITE-6586]
+   * Some Rules not firing due to RelMdPredicates returning null in VolcanoPlanner</a>. */
+  @Test void testPullConstantThroughAggregatePermutedInVolcano() {
+    sql("${sql}")
+        .withVolcanoPlanner(false, p -> {
+          p.addRule(CoreRules.AGGREGATE_PROJECT_PULL_UP_CONSTANTS);
+          p.addRule(CoreRules.PROJECT_MERGE);
+          p.addRule(EnumerableRules.ENUMERABLE_PROJECT_RULE);
+          p.addRule(EnumerableRules.ENUMERABLE_TABLE_SCAN_RULE);
+          p.addRule(EnumerableRules.ENUMERABLE_AGGREGATE_RULE);
+        })
+        .check();
+  }
+
   @Test void testPullConstantThroughAggregatePermutedConstFirst() {
     basePullConstantTroughAggregate();
   }
@@ -5269,6 +5461,25 @@ class RelOptRulesTest extends RelOptTestBase {
         .withTrim(true)
         .withRule(CoreRules.UNION_PULL_UP_CONSTANTS,
             CoreRules.PROJECT_MERGE)
+        .check();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6586">[CALCITE-6586]
+   * Some Rules not firing due to RelMdPredicates returning null in VolcanoPlanner</a>. */
+  @Test void testPullConstantThroughUnionInVolcano() {
+    final String sql = "select 2, deptno, job from emp as e1\n"
+        + "union all\n"
+        + "select 2, deptno, job from emp as e2";
+    sql(sql)
+        .withTrim(true)
+        .withVolcanoPlanner(false, p -> {
+          p.addRule(CoreRules.UNION_PULL_UP_CONSTANTS);
+          p.addRule(CoreRules.PROJECT_MERGE);
+          p.addRule(EnumerableRules.ENUMERABLE_PROJECT_RULE);
+          p.addRule(EnumerableRules.ENUMERABLE_TABLE_SCAN_RULE);
+          p.addRule(EnumerableRules.ENUMERABLE_UNION_RULE);
+        })
         .check();
   }
 
@@ -5659,6 +5870,7 @@ class RelOptRulesTest extends RelOptTestBase {
         + "where deptno is not distinct from 10";
     sql(sql).withPre(getTransitiveProgram())
         .withRule(CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
+            CoreRules.FILTER_REDUCE_EXPRESSIONS,
             CoreRules.PROJECT_REDUCE_EXPRESSIONS)
         .check();
   }
@@ -5669,6 +5881,7 @@ class RelOptRulesTest extends RelOptTestBase {
         + "where mgr is not distinct from null";
     sql(sql).withPre(getTransitiveProgram())
         .withRule(CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
+            CoreRules.FILTER_REDUCE_EXPRESSIONS,
             CoreRules.PROJECT_REDUCE_EXPRESSIONS)
         .check();
   }
@@ -5710,6 +5923,31 @@ class RelOptRulesTest extends RelOptTestBase {
     sql(sql).withPre(getTransitiveProgram())
         .withRule(CoreRules.JOIN_PUSH_TRANSITIVE_PREDICATES,
             CoreRules.FILTER_REDUCE_EXPRESSIONS)
+        .check();
+  }
+
+  @Test void testPullUpPredicatesFromUnionWithProject() {
+    final String sql = "select empno = null from emp where comm = 2\n"
+        + "union all\n"
+        + "select comm = 2 from emp where comm = 2";
+    sql(sql).withPre(getTransitiveProgram())
+        .withRule(CoreRules.FILTER_REDUCE_EXPRESSIONS,
+            CoreRules.PROJECT_REDUCE_EXPRESSIONS)
+          .check();
+  }
+
+  @Test void testPullUpPredicatesFromProject1() {
+    final String sql = "select comm <> 2, comm = 2 from emp where comm = 2";
+    sql(sql).withPre(getTransitiveProgram())
+        .withRule(CoreRules.PROJECT_REDUCE_EXPRESSIONS)
+        .check();
+  }
+
+  @Test void testPullUpPredicatesFromProject2() {
+    final String sql = "select comm = 2, empno <> 1 from emp where comm = 2 and empno = 1";
+    sql(sql).withPre(getTransitiveProgram())
+        .withRule(CoreRules.FILTER_REDUCE_EXPRESSIONS,
+            CoreRules.PROJECT_REDUCE_EXPRESSIONS)
         .check();
   }
 
@@ -5834,6 +6072,20 @@ class RelOptRulesTest extends RelOptTestBase {
         .withRule(CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW,
             CoreRules.PROJECT_MERGE,
             CoreRules.PROJECT_WINDOW_TRANSPOSE)
+        .check();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6632">[CALCITE-6632]
+   * Wrong optimization because window missing constants in digest</a>. */
+  @Test void testWindowMissingConstantInDigest() {
+    final String sql = "select sum(100) over (partition by deptno order by sal) as s\n"
+        + "from emp\n"
+        + "union all\n"
+        + "select sum(1000) over(partition by deptno order by sal) as s\n"
+        + "from emp\n";
+    sql(sql)
+        .withRule(CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW)
         .check();
   }
 
@@ -6582,6 +6834,25 @@ class RelOptRulesTest extends RelOptTestBase {
         .check();
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6600">[CALCITE-6600]
+   * AggregateJoinTransposeRule can throw ArrayIndexOutOfBoundsException when applied
+   * on a SemiJoin</a>.*/
+  @Test void testPushAggregateThroughSemiJoin() {
+    final String sql = "select distinct sal\n"
+        + "from (select * from sales.emp e where e.job in\n"
+        + "(select d.name from sales.dept d))";
+    sql(sql)
+        .withLateDecorrelate(true)
+        .withTrim(true)
+        .withPreRule(CoreRules.FILTER_SUB_QUERY_TO_CORRELATE)
+        .withRule(CoreRules.PROJECT_MERGE,
+            CoreRules.PROJECT_TO_SEMI_JOIN,
+            CoreRules.AGGREGATE_PROJECT_MERGE,
+            CoreRules.AGGREGATE_JOIN_TRANSPOSE_EXTENDED)
+        .check();
+  }
+
   /** Push count(*) through join, no GROUP BY. */
   @Test void testPushAggregateSumNoGroup() {
     final String sql =
@@ -6858,6 +7129,25 @@ class RelOptRulesTest extends RelOptTestBase {
   @Test void testAggregateMerge8() {
     final String sql = "select sum(x) x, min(y) z from (\n"
         + "  select sum(sal) x, min(sal) y from sales.emp)";
+    sql(sql)
+        .withPreRule(CoreRules.AGGREGATE_PROJECT_MERGE,
+            CoreRules.PROJECT_MERGE)
+        .withRule(CoreRules.AGGREGATE_PROJECT_MERGE,
+            CoreRules.AGGREGATE_MERGE)
+        .check();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6557">[CALCITE-6557]
+   * AggregateMergeRule throws 'type mismatch' AssertionError</a>. The scenario
+   * has the same aggregate function (SUM) at multiple levels; the lower level
+   * is NOT NULL (because of GROUP BY) and the upper level is nullable. */
+  @Test void testAggregateMerge9() {
+    final String sql = "SELECT sum(deptno)\n"
+        + "FROM (\n"
+        + "    SELECT sum(deptno) AS deptno\n"
+        + "    FROM dept\n"
+        + "    GROUP BY name)";
     sql(sql)
         .withPreRule(CoreRules.AGGREGATE_PROJECT_MERGE,
             CoreRules.PROJECT_MERGE)
@@ -7314,6 +7604,21 @@ class RelOptRulesTest extends RelOptTestBase {
         .check();
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6642">[CALCITE-6642]
+   * AggregateUnionTransposeRule throws an assertion error when creating children aggregates
+   * when one input only has a non-nullable column</a>. */
+  @Test void testAggregateUnionTransposeWithOneInputNonNullable() {
+    final String sql = "select deptno, SUM(t) from (\n"
+        + "select deptno, 1 as t from sales.emp e1\n"
+        + "union all\n"
+        + "select deptno, nullif(sal, 0) as t from sales.emp e2)\n"
+        + "group by deptno";
+    sql(sql)
+        .withRule(CoreRules.AGGREGATE_UNION_TRANSPOSE)
+        .check();
+  }
+
   /** If all inputs to UNION are already unique, AggregateUnionTransposeRule is
    * a no-op. */
   @Test void testAggregateUnionTransposeWithAllInputsUnique() {
@@ -7473,6 +7778,25 @@ class RelOptRulesTest extends RelOptTestBase {
         + "where deptno = 10\n"
         + "group by deptno, sal";
     sql(sql).withRule(CoreRules.AGGREGATE_ANY_PULL_UP_CONSTANTS)
+        .check();
+  }
+
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6586">[CALCITE-6586]
+   * Some Rules not firing due to RelMdPredicates returning null in VolcanoPlanner</a>. */
+  @Test void testAggregateConstantKeyRuleInVolcano() {
+    final String sql = "select count(*) as c\n"
+        + "from sales.emp\n"
+        + "where deptno = 10\n"
+        + "group by deptno, sal";
+    sql(sql)
+        .withVolcanoPlanner(false, p -> {
+          p.addRule(CoreRules.AGGREGATE_ANY_PULL_UP_CONSTANTS);
+          p.addRule(EnumerableRules.ENUMERABLE_TABLE_SCAN_RULE);
+          p.addRule(EnumerableRules.ENUMERABLE_AGGREGATE_RULE);
+          p.addRule(EnumerableRules.ENUMERABLE_FILTER_RULE);
+          p.addRule(EnumerableRules.ENUMERABLE_PROJECT_RULE);
+        })
         .check();
   }
 
@@ -8595,7 +8919,7 @@ class RelOptRulesTest extends RelOptTestBase {
     final RelCollation collationAfter =
         relAfter.getTraitSet().getTrait(RelCollationTraitDef.INSTANCE);
 
-    assertEquals(collationBefore, collationAfter);
+    assertThat(collationAfter, is(collationBefore));
   }
 
   @Test void testPushFilterWithIsNotDistinctFromPastJoin() {
@@ -9199,4 +9523,17 @@ class RelOptRulesTest extends RelOptTestBase {
         .check();
   }
 
+  @Test void testLoptOptimizeJoinRulePrioritizeSelfJoin() {
+    HepProgram program = new HepProgramBuilder()
+        .addMatchOrder(HepMatchOrder.BOTTOM_UP)
+        .addRuleInstance(CoreRules.JOIN_TO_MULTI_JOIN)
+        .build();
+
+    sql("select e.empno from emp e"
+        + " inner join dept d on d.deptno = e.deptno"
+        + " inner join emp e2 on e.empno = e2.empno")
+        .withPre(program)
+        .withRule(CoreRules.MULTI_JOIN_OPTIMIZE)
+        .check();
+  }
 }

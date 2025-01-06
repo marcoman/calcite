@@ -101,6 +101,10 @@ import org.apache.calcite.runtime.SqlFunctions.FlatProductInputType;
 import org.apache.calcite.runtime.UrlFunctions;
 import org.apache.calcite.runtime.Utilities;
 import org.apache.calcite.runtime.XmlFunctions;
+import org.apache.calcite.runtime.rtti.RuntimeTypeInformation;
+import org.apache.calcite.runtime.variant.VariantNull;
+import org.apache.calcite.runtime.variant.VariantSqlValue;
+import org.apache.calcite.runtime.variant.VariantValue;
 import org.apache.calcite.schema.FilterableTable;
 import org.apache.calcite.schema.ModifiableTable;
 import org.apache.calcite.schema.ProjectableFilterableTable;
@@ -141,6 +145,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.TimeZone;
+import java.util.UUID;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -369,6 +374,7 @@ public enum BuiltInMethod {
   COLLECTION_RETAIN_ALL(Collection.class, "retainAll", Collection.class),
   LIST_CONTAINS(List.class, "contains", Object.class),
   LIST_GET(List.class, "get", int.class),
+  LIST_TO_ARRAY(List.class, "toArray"),
   ITERATOR_HAS_NEXT(Iterator.class, "hasNext"),
   ITERATOR_NEXT(Iterator.class, "next"),
   MATH_MAX(Math.class, "max", int.class, int.class),
@@ -406,6 +412,7 @@ public enum BuiltInMethod {
   TO_CODE_POINTS(SqlFunctions.class, "toCodePoints", String.class),
   CONVERT(SqlFunctions.class, "convertWithCharset", String.class, String.class,
       String.class),
+  CONVERT_ORACLE(SqlFunctions.class, "convertOracle", String.class, String[].class),
   EXP(SqlFunctions.class, "exp", double.class),
   MOD(SqlFunctions.class, "mod", long.class, long.class),
   POWER(SqlFunctions.class, "power", double.class, double.class),
@@ -413,6 +420,8 @@ public enum BuiltInMethod {
   REPEAT(SqlFunctions.class, "repeat", String.class, int.class),
   SPACE(SqlFunctions.class, "space", int.class),
   SPLIT(SqlFunctions.class, "split", String.class),
+  SPLIT_PART(SqlFunctions.class, "splitPart", String.class, String.class,
+      int.class),
   SOUNDEX(SqlFunctions.class, "soundex", String.class),
   SOUNDEX_SPARK(SqlFunctions.class, "soundexSpark", String.class),
   STRCMP(SqlFunctions.class, "strcmp", String.class, String.class),
@@ -484,6 +493,10 @@ public enum BuiltInMethod {
   IS_JSON_ARRAY(JsonFunctions.class, "isJsonArray", String.class),
   IS_JSON_SCALAR(JsonFunctions.class, "isJsonScalar", String.class),
   ST_GEOM_FROM_EWKT(SpatialTypeFunctions.class, "ST_GeomFromEWKT", String.class),
+  UUID_FROM_STRING(UUID.class, "fromString", String.class),
+  UUID_TO_STRING(SqlFunctions.class, "uuidToString", UUID.class),
+  UUID_TO_BINARY(SqlFunctions.class, "uuidToBinary", UUID.class),
+  BINARY_TO_UUID(SqlFunctions.class, "binaryToUuid", ByteString.class),
   INITCAP(SqlFunctions.class, "initcap", String.class),
   SUBSTRING(SqlFunctions.class, "substring", String.class, int.class,
       int.class),
@@ -558,6 +571,7 @@ public enum BuiltInMethod {
   SAFE_MULTIPLY(SqlFunctions.class, "safeMultiply", double.class, double.class),
   SAFE_SUBTRACT(SqlFunctions.class, "safeSubtract", double.class, double.class),
   LOG(SqlFunctions.class, "log", long.class, long.class, boolean.class),
+  LOG1P(SqlFunctions.class, "log1p", long.class),
   SEC(SqlFunctions.class, "sec", double.class),
   SECH(SqlFunctions.class, "sech", double.class),
   SIGN(SqlFunctions.class, "sign", long.class),
@@ -643,8 +657,10 @@ public enum BuiltInMethod {
   LT(SqlFunctions.class, "lt", boolean.class, boolean.class),
   GT(SqlFunctions.class, "gt", boolean.class, boolean.class),
   BIT_AND(SqlFunctions.class, "bitAnd", long.class, long.class),
+  BITCOUNT(SqlFunctions.class, "bitCount", BigDecimal.class),
   BIT_OR(SqlFunctions.class, "bitOr", long.class, long.class),
   BIT_XOR(SqlFunctions.class, "bitXor", long.class, long.class),
+  BIT_NOT(SqlFunctions.class, "bitNot", long.class),
   MODIFIABLE_TABLE_GET_MODIFIABLE_COLLECTION(ModifiableTable.class,
       "getModifiableCollection"),
   SCANNABLE_TABLE_SCAN(ScannableTable.class, "scan", DataContext.class),
@@ -706,16 +722,16 @@ public enum BuiltInMethod {
       String.class, long.class),
   TO_CHAR(SqlFunctions.DateFormatFunction.class, "toChar", long.class,
       String.class),
-  TO_CHAR_PG(SqlFunctions.DateFormatFunction.class, "toCharPg", long.class,
+  TO_CHAR_PG(SqlFunctions.DateFormatFunctionPg.class, "toChar", long.class,
       String.class),
   TO_DATE(SqlFunctions.DateFormatFunction.class, "toDate", String.class,
       String.class),
-  TO_DATE_PG(SqlFunctions.DateFormatFunction.class, "toDatePg", String.class,
+  TO_DATE_PG(SqlFunctions.DateFormatFunctionPg.class, "toDate", String.class,
       String.class),
   TO_TIMESTAMP(SqlFunctions.DateFormatFunction.class, "toTimestamp", String.class,
       String.class),
-  TO_TIMESTAMP_PG(SqlFunctions.DateFormatFunction.class, "toTimestampPg", String.class,
-      String.class),
+  TO_TIMESTAMP_PG(SqlFunctions.DateFormatFunctionPg.class, "toTimestamp",
+      String.class, String.class),
   FORMAT_DATE(SqlFunctions.DateFormatFunction.class, "formatDate",
       String.class, int.class),
   FORMAT_TIME(SqlFunctions.DateFormatFunction.class, "formatTime",
@@ -772,6 +788,8 @@ public enum BuiltInMethod {
       String.class),
   LOCAL_TIMESTAMP(SqlFunctions.class, "localTimestamp", DataContext.class),
   LOCAL_TIME(SqlFunctions.class, "localTime", DataContext.class),
+  SYSDATE(SqlFunctions.class, "sysDate", DataContext.class),
+  SYSTIMESTAMP(SqlFunctions.class, "sysTimestamp", DataContext.class),
   TIME_ZONE(SqlFunctions.class, "timeZone", DataContext.class),
   USER(SqlFunctions.class, "user", DataContext.class),
   SYSTEM_USER(SqlFunctions.class, "systemUser", DataContext.class),
@@ -858,6 +876,7 @@ public enum BuiltInMethod {
   MAP_FROM_ARRAYS(SqlFunctions.class, "mapFromArrays", List.class, List.class),
   MAP_FROM_ENTRIES(SqlFunctions.class, "mapFromEntries", List.class),
   STR_TO_MAP(SqlFunctions.class, "strToMap", String.class, String.class, String.class),
+  SUBSTRING_INDEX(SqlFunctions.class, "substringIndex", String.class, String.class, int.class),
   SELECTIVITY(Selectivity.class, "getSelectivity", RexNode.class),
   UNIQUE_KEYS(UniqueKeys.class, "getUniqueKeys", boolean.class),
   AVERAGE_ROW_SIZE(Size.class, "averageRowSize"),
@@ -926,7 +945,13 @@ public enum BuiltInMethod {
       long.class),
   BIG_DECIMAL_ADD(BigDecimal.class, "add", BigDecimal.class),
   BIG_DECIMAL_NEGATE(BigDecimal.class, "negate"),
-  COMPARE_TO(Comparable.class, "compareTo", Object.class);
+  COMPARE_TO(Comparable.class, "compareTo", Object.class),
+  VARIANT_CREATE(VariantSqlValue.class, "create", RoundingMode.class,
+      Object.class, RuntimeTypeInformation.class),
+  VARIANT_CAST(VariantValue.class, "cast", RuntimeTypeInformation.class),
+  TYPEOF(VariantValue.class, "getTypeString", VariantValue.class),
+  VARIANT_ITEM(SqlFunctions.class, "item", VariantValue.class, Object.class),
+  VARIANTNULL(VariantNull.class, "getInstance");
 
   @SuppressWarnings("ImmutableEnumChecker")
   public final Method method;

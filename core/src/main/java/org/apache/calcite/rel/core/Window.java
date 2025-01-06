@@ -163,6 +163,9 @@ public abstract class Window extends SingleRel implements Hintable {
     for (Ord<Group> window : Ord.zip(groups)) {
       pw.item("window#" + window.i, window.e.toString());
     }
+    if (this.constants != null && this.constants.size() > 0) {
+      pw.item("constants", constants);
+    }
     return pw;
   }
 
@@ -384,7 +387,7 @@ public abstract class Window extends SingleRel implements Hintable {
         @Override public AggregateCall get(int index) {
           final RexWinAggCall aggCall = aggCalls.get(index);
           final SqlAggFunction op = (SqlAggFunction) aggCall.getOperator();
-          return AggregateCall.create(op, aggCall.distinct, false,
+          return AggregateCall.create(aggCall.getParserPosition(), op, aggCall.distinct, false,
               aggCall.ignoreNulls, ImmutableList.of(),
               getProjectOrdinals(aggCall.getOperands()),
               -1, null, RelCollations.EMPTY,

@@ -62,6 +62,8 @@ import static com.google.common.base.Preconditions.checkArgument;
 
 import static org.apache.calcite.util.NumberUtil.multiply;
 
+import static java.util.Objects.requireNonNull;
+
 /**
  * RelMdUtil provides utility methods used by the metadata provider methods.
  */
@@ -108,9 +110,7 @@ public class RelMdUtil {
     RexCall call = (RexCall) artificialSelectivityFuncNode;
     assert call.getOperator() == ARTIFICIAL_SELECTIVITY_FUNC;
     RexNode operand = call.getOperands().get(0);
-    @SuppressWarnings("unboxing.of.nullable")
-    double doubleValue = ((RexLiteral) operand).getValueAs(Double.class);
-    return doubleValue;
+    return RexLiteral.numberValue(operand).doubleValue();
   }
 
   /**
@@ -208,6 +208,18 @@ public class RelMdUtil {
       RelNode rel, ImmutableBitSet colMask) {
     Boolean b = mq.areColumnsUnique(rel, colMask, false);
     return b != null && b;
+  }
+
+  public static boolean isRelDefinitelyEmpty(RelMetadataQuery mq,
+      RelNode rel) {
+    Boolean b = mq.isEmpty(rel);
+    return b != null && b;
+  }
+
+  public static boolean isRelDefinitelyNotEmpty(RelMetadataQuery mq,
+      RelNode rel) {
+    Boolean b = mq.isEmpty(rel);
+    return b != null && !b;
   }
 
   public static @Nullable Boolean areColumnsUnique(RelMetadataQuery mq, RelNode rel,
@@ -905,12 +917,12 @@ public class RelMdUtil {
    * cardinality of its result. */
   private static class CardOfProjExpr extends RexVisitorImpl<@Nullable Double> {
     private final RelMetadataQuery mq;
-    private Project rel;
+    private final Project rel;
 
     CardOfProjExpr(RelMetadataQuery mq, Project rel) {
       super(true);
-      this.mq = mq;
-      this.rel = rel;
+      this.mq = requireNonNull(mq, "mq");
+      this.rel = requireNonNull(rel, "rel");
     }
 
     @Override public @Nullable Double visitInputRef(RexInputRef var) {

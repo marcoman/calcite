@@ -55,6 +55,10 @@ import java.lang.reflect.Type;
 import java.util.ArrayList;
 import java.util.List;
 
+import static java.lang.Double.parseDouble;
+import static java.lang.Float.parseFloat;
+import static java.lang.Integer.parseInt;
+import static java.lang.Long.parseLong;
 import static java.util.Objects.requireNonNull;
 
 /**
@@ -175,24 +179,29 @@ public class ArrowTable extends AbstractTable
     final RelDataTypeFactory.Builder builder = typeFactory.builder();
     for (Field field : schema.getFields()) {
       builder.add(field.getName(),
-          ArrowFieldType.of(field.getType()).toType(typeFactory));
+          ArrowFieldTypeFactory.toType(field.getType(), typeFactory));
     }
     return builder.build();
   }
 
   private static TreeNode makeLiteralNode(String literal, String type) {
-    switch (type) {
-    case "integer":
-      return TreeBuilder.makeLiteral(Integer.parseInt(literal));
-    case "long":
-      return TreeBuilder.makeLiteral(Long.parseLong(literal));
-    case "float":
-      return TreeBuilder.makeLiteral(Float.parseFloat(literal));
-    case "double":
-      return TreeBuilder.makeLiteral(Double.parseDouble(literal));
-    case "string":
+    if (type.startsWith("decimal")) {
+      String[] typeParts =
+          type.substring(type.indexOf('(') + 1, type.indexOf(')')).split(",");
+      int precision = parseInt(typeParts[0]);
+      int scale = parseInt(typeParts[1]);
+      return TreeBuilder.makeDecimalLiteral(literal, precision, scale);
+    } else if (type.equals("integer")) {
+      return TreeBuilder.makeLiteral(parseInt(literal));
+    } else if (type.equals("long")) {
+      return TreeBuilder.makeLiteral(parseLong(literal));
+    } else if (type.equals("float")) {
+      return TreeBuilder.makeLiteral(parseFloat(literal));
+    } else if (type.equals("double")) {
+      return TreeBuilder.makeLiteral(parseDouble(literal));
+    } else if (type.equals("string")) {
       return TreeBuilder.makeStringLiteral(literal.substring(1, literal.length() - 1));
-    default:
+    } else {
       throw new IllegalArgumentException("Invalid literal " + literal
           + ", type " + type);
     }

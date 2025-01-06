@@ -70,12 +70,6 @@ public abstract class Bug {
   public static final boolean DT1684_FIXED = false;
 
   /**
-   * Whether <a href="http://issues.eigenbase.org/browse/FNL-25">issue
-   * FNL-25</a> is fixed. (also filed as dtbug 153)
-   */
-  public static final boolean FNL25_FIXED = false;
-
-  /**
    * Whether <a href="http://issues.eigenbase.org/browse/FRG-73">issue FRG-73:
    * miscellaneous bugs with nested comments</a> is fixed.
    */
@@ -178,6 +172,12 @@ public abstract class Bug {
   public static final boolean CALCITE_4645_FIXED = false;
 
   /** Whether
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-4868">[CALCITE-4868]
+   * Elasticsearch adapter fails if GROUP BY is followed by ORDER BY</a> is
+   * fixed. */
+  public static final boolean CALCITE_4868_FIXED = false;
+
+  /** Whether
    * <a href="https://issues.apache.org/jira/browse/CALCITE-5422">[CALCITE-5422]
    * MILLISECOND and MICROSECOND units in INTERVAL literal</a> is fixed. */
   public static final boolean CALCITE_5422_FIXED = false;
@@ -219,6 +219,12 @@ public abstract class Bug {
    * The BigQuery functions SAFE_* do not match the BigQuery specification</a>
    * is fixed. */
   public static final boolean CALCITE_6328_FIXED = false;
+
+  /** Whether
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6611">[CALCITE-6611]
+   * Rules that modify the sort collation cannot be applied in VolcanoPlanner</a>
+   * is fixed. */
+  public static final boolean CALCITE_6611_FIXED = false;
 
   /**
    * Use this to flag temporary code.

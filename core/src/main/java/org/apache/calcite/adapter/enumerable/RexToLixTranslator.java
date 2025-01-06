@@ -32,6 +32,7 @@ import org.apache.calcite.linq4j.tree.ParameterExpression;
 import org.apache.calcite.linq4j.tree.Primitive;
 import org.apache.calcite.linq4j.tree.Statement;
 import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexCall;
 import org.apache.calcite.rex.RexCallBinding;
@@ -53,6 +54,8 @@ import org.apache.calcite.rex.RexTableInputRef;
 import org.apache.calcite.rex.RexUtil;
 import org.apache.calcite.rex.RexVisitor;
 import org.apache.calcite.runtime.SpatialTypeFunctions;
+import org.apache.calcite.runtime.rtti.RuntimeTypeInformation;
+import org.apache.calcite.runtime.variant.VariantValue;
 import org.apache.calcite.schema.FunctionContext;
 import org.apache.calcite.sql.SqlIntervalQualifier;
 import org.apache.calcite.sql.SqlOperator;
@@ -313,7 +316,57 @@ public class RexToLixTranslator implements RexVisitor<RexToLixTranslator.Result>
     final Supplier<Expression> defaultExpression = () ->
         EnumUtils.convert(operand, typeFactory.getJavaClass(targetType));
 
+    if (sourceType.getSqlTypeName() == SqlTypeName.VARIANT) {
+      // Converting VARIANT to VARIANT uses the default conversion
+      if (targetType.getSqlTypeName() == SqlTypeName.VARIANT) {
+        return defaultExpression.get();
+      }
+      // Converting a VARIANT to any other type calls the Variant.cast method
+      // First cast operand to a VariantValue (it may be an Object)
+      Expression operandCast = Expressions.convert_(operand, VariantValue.class);
+      Expression cast =
+          Expressions.call(operandCast, BuiltInMethod.VARIANT_CAST.method,
+              RuntimeTypeInformation.createExpression(targetType));
+      // The cast returns an Object, so we need a convert to the expected Java type
+      RelDataType nullableTarget = typeFactory.createTypeWithNullability(targetType, true);
+      return Expressions.convert_(cast, typeFactory.getJavaClass(nullableTarget));
+    }
+
+    if (targetType.getSqlTypeName() == SqlTypeName.ROW) {
+      assert sourceType.getSqlTypeName() == SqlTypeName.ROW;
+      List<RelDataTypeField> targetTypes = targetType.getFieldList();
+      List<RelDataTypeField> sourceTypes = sourceType.getFieldList();
+      assert targetTypes.size() == sourceTypes.size();
+      List<Expression> fields = new ArrayList<>();
+      for (int i = 0; i < targetTypes.size(); i++) {
+        RelDataTypeField targetField = targetTypes.get(i);
+        RelDataTypeField sourceField = sourceTypes.get(i);
+        Expression field = Expressions.arrayIndex(operand, Expressions.constant(i));
+        // In the generated Java code 'field' is an Object,
+        // we need to also cast it to the correct type to enable correct method dispatch in Java.
+        // We force the type to be nullable; this way, instead of (int) we get (Integer).
+        // Casting an object ot an int is not legal.
+        RelDataType nullableSourceFieldType =
+            typeFactory.createTypeWithNullability(sourceField.getType(), true);
+        Type javaType = typeFactory.getJavaClass(nullableSourceFieldType);
+        if (!javaType.getTypeName().equals("java.lang.Void")
+            && !nullableSourceFieldType.isStruct()) {
+          // Cannot cast to Void - this is the type of NULL literals.
+          field = Expressions.convert_(field, javaType);
+        }
+        Expression convert =
+            getConvertExpression(sourceField.getType(), targetField.getType(), field, format);
+        fields.add(convert);
+      }
+      return Expressions.call(BuiltInMethod.ARRAY.method, fields);
+    }
+
     switch (targetType.getSqlTypeName()) {
+    case VARIANT:
+      // Converting any type to a VARIANT invokes the Variant constructor
+      Expression rtti = RuntimeTypeInformation.createExpression(sourceType);
+      Expression roundingMode = Expressions.constant(typeFactory.getTypeSystem().roundingMode());
+      return Expressions.call(BuiltInMethod.VARIANT_CREATE.method, roundingMode, operand, rtti);
     case ANY:
       return operand;
 
@@ -324,7 +377,8 @@ public class RexToLixTranslator implements RexVisitor<RexToLixTranslator.Result>
       case VARCHAR:
         return Expressions.call(BuiltInMethod.STRING_TO_BINARY.method, operand,
             new ConstantExpression(Charset.class, sourceType.getCharset()));
-
+      case UUID:
+        return Expressions.call(BuiltInMethod.UUID_TO_BINARY.method, operand);
       default:
         return defaultExpression.get();
       }
@@ -363,12 +417,26 @@ public class RexToLixTranslator implements RexVisitor<RexToLixTranslator.Result>
       default:
         return defaultExpression.get();
       }
-
+    case UUID:
+      switch (sourceType.getSqlTypeName()) {
+      case UUID:
+        return operand;
+      case CHAR:
+      case VARCHAR:
+        return Expressions.call(BuiltInMethod.UUID_FROM_STRING.method, operand);
+      case BINARY:
+      case VARBINARY:
+        return Expressions.call(BuiltInMethod.BINARY_TO_UUID.method, operand);
+      default:
+        return defaultExpression.get();
+      }
     case CHAR:
     case VARCHAR:
       final SqlIntervalQualifier interval =
           sourceType.getIntervalQualifier();
       switch (sourceType.getSqlTypeName()) {
+      case UUID:
+        return Expressions.call(BuiltInMethod.UUID_TO_STRING.method, operand);
       // If format string is supplied, return formatted date/time/timestamp
       case DATE:
         return RexImpTable.optimize2(operand, Expressions.isConstantNull(format)
@@ -510,9 +578,14 @@ public class RexToLixTranslator implements RexVisitor<RexToLixTranslator.Result>
     case TINYINT:
     case SMALLINT: {
       if (SqlTypeName.NUMERIC_TYPES.contains(sourceType.getSqlTypeName())) {
+        Type javaClass = typeFactory.getJavaClass(targetType);
+        Primitive primitive = Primitive.of(javaClass);
+        if (primitive == null) {
+          primitive = Primitive.ofBox(javaClass);
+        }
         return Expressions.call(
             BuiltInMethod.INTEGER_CAST_ROUNDING_MODE.method,
-            Expressions.constant(Primitive.of(typeFactory.getJavaClass(targetType))),
+            Expressions.constant(primitive),
             operand, Expressions.constant(typeFactory.getTypeSystem().roundingMode()));
       }
       return defaultExpression.get();
@@ -553,9 +626,12 @@ public class RexToLixTranslator implements RexVisitor<RexToLixTranslator.Result>
             <= 0) {
           truncate = false;
         }
-        // If this is a widening cast, no need to pad.
-        if (SqlTypeUtil.comparePrecision(sourcePrecision, targetPrecision)
-            >= 0) {
+        // If this is a narrowing cast, no need to pad.
+        // However, conversion from VARCHAR(N) to CHAR(N) still requires padding,
+        // because VARCHAR(N) does not represent the spaces explicitly,
+        // whereas CHAR(N) does.
+        if ((SqlTypeUtil.comparePrecision(sourcePrecision, targetPrecision) >= 0)
+            && (sourceType.getSqlTypeName() != SqlTypeName.VARCHAR)) {
           pad = false;
         }
         // fall through
@@ -958,6 +1034,9 @@ public class RexToLixTranslator implements RexVisitor<RexToLixTranslator.Result>
     case VARCHAR:
       value2 = literal.getValueAs(String.class);
       break;
+    case UUID:
+      return Expressions.call(null, BuiltInMethod.UUID_FROM_STRING.method,
+          Expressions.constant(literal.getValueAs(String.class)));
     case BINARY:
     case VARBINARY:
       return Expressions.new_(
@@ -1466,6 +1545,7 @@ public class RexToLixTranslator implements RexVisitor<RexToLixTranslator.Result>
         new BlockBuilder(true, currentBlockBuilder);
     final RexToLixTranslator ifTrueTranslator =
         currentTranslator.setBlock(ifTrueBlockBuilder);
+    ifTrueTranslator.rexResultMap.putAll(currentTranslator.rexResultMap);
     final Expression ifTrueRes =
         implementCallOperand2(ifTrueNode, storageTypes.get(pos + 1),
             ifTrueTranslator);
@@ -1486,6 +1566,7 @@ public class RexToLixTranslator implements RexVisitor<RexToLixTranslator.Result>
         new BlockBuilder(true, currentBlockBuilder);
     final RexToLixTranslator ifFalseTranslator =
         currentTranslator.setBlock(ifFalseBlockBuilder);
+    ifFalseTranslator.rexResultMap.putAll(currentTranslator.rexResultMap);
     implementRecursively(ifFalseTranslator, operandList, valueVariable, pos + 2);
     final BlockStatement ifFalse = ifFalseBlockBuilder.toBlock();
     currentBlockBuilder.add(

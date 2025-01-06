@@ -103,9 +103,6 @@ public interface CalciteResource {
   @BaseMessage("Illegal array expression ''{0}''")
   ExInst<CalciteException> illegalArrayExpression(String a0);
 
-  @BaseMessage("''FROM'' without operands preceding it is illegal")
-  ExInst<CalciteException> illegalFromEmpty();
-
   @BaseMessage("ROW expression encountered in illegal context")
   ExInst<CalciteException> illegalRowExpression();
 
@@ -167,7 +164,7 @@ public interface CalciteResource {
   @BaseMessage("Values in expression list must have compatible types")
   ExInst<SqlValidatorException> incompatibleTypesInList();
 
-  @BaseMessage("Cannot apply {0} to the two different charsets {1} and {2}")
+  @BaseMessage("Cannot apply operation ''{0}'' to strings with different charsets ''{1}'' and ''{2}''")
   ExInst<SqlValidatorException> incompatibleCharset(String a0, String a1,
       String a2);
 
@@ -502,7 +499,7 @@ public interface CalciteResource {
   @BaseMessage("QUALIFY expression ''{0}'' must contain a window function")
   ExInst<SqlValidatorException> qualifyExpressionMustContainWindowFunction(String a0);
 
-  @BaseMessage("ROW/RANGE not allowed with RANK, DENSE_RANK, ROW_NUMBER or PERCENTILE_CONT/DISC functions")
+  @BaseMessage("ROW/RANGE not allowed with RANK, DENSE_RANK, ROW_NUMBER, PERCENTILE_CONT/DISC or LAG/LEAD functions")
   ExInst<SqlValidatorException> rankWithFrame();
 
   @BaseMessage("RANK or DENSE_RANK functions require ORDER BY clause in window specification")
@@ -611,6 +608,9 @@ public interface CalciteResource {
 
   @BaseMessage("Argument to function ''{0}'' must not be NULL")
   ExInst<SqlValidatorException> argumentMustNotBeNull(String a0);
+
+  @BaseMessage("At least one argument to function ''{0}'' must not be NULL")
+  ExInst<SqlValidatorException> atLeastOneArgumentMustNotBeNull(String a0);
 
   @BaseMessage("Illegal use of ''NULL''")
   ExInst<SqlValidatorException> nullIllegal();
@@ -929,6 +929,21 @@ public interface CalciteResource {
 
   @BaseMessage("Illegal arguments for 'FORMAT_NUMBER' function: negative decimal value not allowed")
   ExInst<CalciteException> illegalNegativeDecimalValue();
+
+  @BaseMessage("Illegal arguments for 'MAP_ENTRIES' function: using a map with a null key is not allowed")
+  ExInst<CalciteException> illegalMapEntriesWithNullKey();
+
+  @BaseMessage("Illegal arguments for 'MAP_KEYS' function: using a map with a null key is not allowed")
+  ExInst<CalciteException> illegalMapKeysWithNullKey();
+
+  @BaseMessage("Illegal arguments for 'MAP_VALUES' function: using a map with a null key is not allowed")
+  ExInst<CalciteException> illegalMapValuesWithNullKey();
+
+  @BaseMessage("DECIMAL precision {0,number,#} must be between 1 and {1,number,#}")
+  ExInst<CalciteException> invalidPrecisionForDecimalType(int precision, int maxPrecision);
+
+  @BaseMessage("DECIMAL scale {0,number,#} must be between {1,number,#} and {2,number,#}")
+  ExInst<CalciteException> invalidScaleForDecimalType(int scale, int minScale, int maxScale);
 
   @BaseMessage("Illegal arguments: The length of the keys array {0,number,#} is not equal to the length of the values array {1,number,#} in MAP_FROM_ARRAYS function")
   ExInst<CalciteException> illegalArgumentsInMapFromArraysFunc(int arg0, int arg1);

@@ -122,22 +122,22 @@ class JdbcAdapterTest {
             + "union all\n"
             + "select ename from SCOTT.emp where empno > 10")
         .explainContains("PLAN=EnumerableUnion(all=[true])\n"
-                    + "  JdbcToEnumerableConverter\n"
-                    + "    JdbcProject(store_name=[$3])\n"
-                    + "      JdbcFilter(condition=[<($0, 10)])\n"
-                    + "        JdbcTableScan(table=[[foodmart, store]])\n"
-                    + "  JdbcToEnumerableConverter\n"
-                    + "    JdbcProject(ENAME=[$1])\n"
-                    + "      JdbcFilter(condition=[>($0, 10)])\n"
-                    + "        JdbcTableScan(table=[[SCOTT, EMP]])")
+            + "  JdbcToEnumerableConverter\n"
+            + "    JdbcProject(store_name=[$3])\n"
+            + "      JdbcFilter(condition=[<($0, 10)])\n"
+            + "        JdbcTableScan(table=[[foodmart, store]])\n"
+            + "  JdbcToEnumerableConverter\n"
+            + "    JdbcProject(EXPR$0=[CAST($1):VARCHAR(30)])\n"
+            + "      JdbcFilter(condition=[>(CAST($0):INTEGER NOT NULL, 10)])\n"
+            + "        JdbcTableScan(table=[[SCOTT, EMP]])")
         .runs()
         .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
         .planHasSql("SELECT \"store_name\"\n"
                 + "FROM \"foodmart\".\"store\"\n"
                 + "WHERE \"store_id\" < 10")
-        .planHasSql("SELECT \"ENAME\"\n"
-                + "FROM \"SCOTT\".\"EMP\"\n"
-                + "WHERE \"EMPNO\" > 10");
+        .planHasSql("SELECT CAST(\"ENAME\" AS VARCHAR(30))\n"
+            + "FROM \"SCOTT\".\"EMP\"\n"
+            + "WHERE CAST(\"EMPNO\" AS INTEGER) > 10");
   }
 
   /** Test case for
@@ -160,13 +160,18 @@ class JdbcAdapterTest {
             + "where \"product_id\" = 1")
         .runs()
         .enable(CalciteAssert.DB == CalciteAssert.DatabaseInstance.HSQLDB)
-        .planHasSql("SELECT *\n"
+        .planHasSql("SELECT 1 AS \"product_id\", \"time_id\", \"customer_id\", "
+            + "\"promotion_id\", \"store_id\", \"store_sales\", "
+            + "\"store_cost\", \"unit_sales\"\n"
+            + "FROM (SELECT \"time_id\", \"customer_id\", \"promotion_id\", \"store_id\", "
+            + "\"store_sales\", \"store_cost\", \"unit_sales\"\n"
             + "FROM \"foodmart\".\"sales_fact_1997\"\n"
             + "WHERE \"product_id\" = 1\n"
             + "UNION ALL\n"
-            + "SELECT *\n"
+            + "SELECT \"time_id\", \"customer_id\", \"promotion_id\", \"store_id\", "
+            + "\"store_sales\", \"store_cost\", \"unit_sales\"\n"
             + "FROM \"foodmart\".\"sales_fact_1998\"\n"
-            + "WHERE \"product_id\" = 1");
+            + "WHERE \"product_id\" = 1) AS \"t3\"");
   }
 
   @Test void testInPlan() {
@@ -1344,7 +1349,8 @@ class JdbcAdapterTest {
         + "  JdbcTableModify(table=[[foodmart, expense_fact]], operation=[MERGE],"
         + " updateColumnList=[[amount]], flattened=[false])\n"
         + "    JdbcProject(STORE_ID=[$0], $f1=[666], $f2=[1997-01-01 00:00:00], $f3=[666],"
-        + " $f4=['666'], $f5=[666], AMOUNT=[CAST($1):DECIMAL(10, 4) NOT NULL], store_id=[$2],"
+        + " $f4=['666':VARCHAR(30)], $f5=[666], AMOUNT=[CAST($1):DECIMAL(10, 4) NOT NULL],"
+        + " store_id=[$2],"
         + " account_id=[$3], exp_date=[$4], time_id=[$5], category_id=[$6], currency_id=[$7],"
         + " amount=[$8], AMOUNT0=[$1])\n"
         + "      JdbcJoin(condition=[=($2, $0)], joinType=[left])\n"
@@ -1372,6 +1378,52 @@ class JdbcAdapterTest {
     });
   }
 
+  /**
+   * Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6221">[CALCITE-6221]</a>.*/
+  @Test void testUnknownColumn() {
+    CalciteAssert.model(JdbcTest.SCOTT_MODEL)
+        .query("SELECT\n"
+          + "    \"content-format-owner\",\n"
+          + "    \"content-owner\"\n"
+          + "FROM\n"
+          + "    (\n"
+          + "        SELECT\n"
+          + "            d1.dname AS \"content-format-owner\",\n"
+          + "            d2.dname || ' ' AS \"content-owner\"\n"
+          + "        FROM\n"
+          + "            scott.emp e1\n"
+          + "            left outer join scott.dept d1 on e1.deptno = d1.deptno\n"
+          + "            left outer join scott.dept d2 on e1.deptno = d2.deptno\n"
+          + "            left outer join scott.emp e2 on e1.deptno = e2.deptno\n"
+          + "        GROUP BY\n"
+          + "            d1.dname,\n"
+          + "            d2.dname\n"
+          + "    )\n"
+          + "WHERE\n"
+          + "    \"content-owner\" IN (?)")
+        .planHasSql("SELECT "
+            + "\"t2\".\"DNAME\" AS \"content-format-owner\", "
+            + "\"t2\".\"DNAME0\" || ' ' AS \"content-owner\"\n"
+            + "FROM (SELECT \"t\".\"DEPTNO\" AS \"DEPTNO\", "
+            + "\"t0\".\"DEPTNO\" AS \"DEPTNO0\", "
+            + "\"t0\".\"DNAME\" AS \"DNAME\", "
+            + "\"t1\".\"DEPTNO\" AS \"DEPTNO1\", "
+            + "\"t1\".\"DNAME\" AS \"DNAME0\"\n"
+            + "FROM (SELECT \"DEPTNO\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t\"\n"
+            + "LEFT JOIN (SELECT \"DEPTNO\", \"DNAME\"\n"
+            + "FROM \"SCOTT\".\"DEPT\") AS \"t0\" ON \"t\".\"DEPTNO\" = \"t0\".\"DEPTNO\"\n"
+            + "LEFT JOIN (SELECT \"DEPTNO\", \"DNAME\"\n"
+            + "FROM \"SCOTT\".\"DEPT\") AS \"t1\" "
+            + "ON \"t\".\"DEPTNO\" = \"t1\".\"DEPTNO\"\n"
+            + "WHERE \"t1\".\"DNAME\" || ' ' = ?) AS \"t2\"\n"
+            + "LEFT JOIN (SELECT \"DEPTNO\"\n"
+            + "FROM \"SCOTT\".\"EMP\") AS \"t3\" "
+            + "ON \"t2\".\"DEPTNO\" = \"t3\".\"DEPTNO\"\n"
+            + "GROUP BY \"t2\".\"DNAME\", \"t2\".\"DNAME0\"")
+        .runs();
+  }
   /** Acquires a lock, and releases it when closed. */
   static class LockWrapper implements AutoCloseable {
     private final Lock lock;

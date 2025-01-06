@@ -83,7 +83,6 @@ import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.hasToString;
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
@@ -572,11 +571,13 @@ public class SqlParserTest {
       "USAGE",                         "92", "99",
       "USER",                          "92", "99", "2003", "2011", "2014", "c",
       "USING",                         "92", "99", "2003", "2011", "2014", "c",
+      "UUID",                                                              "c",
       "VALUE",                         "92", "99", "2003", "2011", "2014", "c",
       "VALUES",                        "92", "99", "2003", "2011", "2014", "c",
       "VALUE_OF",                                                  "2014", "c",
       "VARBINARY",                                         "2011", "2014", "c",
       "VARCHAR",                       "92", "99", "2003", "2011", "2014", "c",
+      "VARIANT",                                                           "c",
       "VARYING",                       "92", "99", "2003", "2011", "2014", "c",
       "VAR_POP",                                           "2011", "2014", "c",
       "VAR_SAMP",                                          "2011", "2014", "c",
@@ -719,13 +720,17 @@ public class SqlParserTest {
       case "2011":
       case "2014":
       case "c":
-        assert r != null;
+        if (r == null) {
+          throw new AssertionError("word should come before year: " + w);
+        }
         if (dialect == null || dialect.equals(w)) {
           builder.add(r);
         }
         break;
       default:
-        assert r == null || r.compareTo(w) < 0 : "table should be sorted: " + w;
+        if (r != null && r.compareTo(w) >= 0) {
+          throw new AssertionError("table should be sorted: " + w);
+        }
         r = w;
       }
     }
@@ -1009,6 +1014,30 @@ public class SqlParserTest {
     sql("select DECIMAL \"999\"")
         .withDialect(BIG_QUERY)
         .ok("SELECT 999");
+  }
+
+  @Test void testDecimalWithScale() {
+    sql("select cast(15 as decimal(3, 1))")
+        .ok("SELECT CAST(15 AS DECIMAL(3, 1))");
+    sql("select cast(15 as decimal(3, -1))")
+        .ok("SELECT CAST(15 AS DECIMAL(3, -1))");
+    sql("select cast(15 as decimal(3, 0))")
+        .ok("SELECT CAST(15 AS DECIMAL(3, 0))");
+  }
+
+  @Test void testDecimalWithPrecision() {
+    // the precision greater than the max precision
+    sql("select cast(15 as decimal(1000, 1))")
+        .ok("SELECT CAST(15 AS DECIMAL(1000, 1))");
+    sql("select cast(15 as decimal(3, 1))")
+        .ok("SELECT CAST(15 AS DECIMAL(3, 1))");
+    sql("select cast(15 as decimal(^-^3, 1))")
+        .fails("Encountered \"-\" at line 1, column 27\\.\n"
+            + "Was expecting:\n"
+            + "    <UNSIGNED_INTEGER_LITERAL> \\.\\.\\.\n"
+            + "    ");
+    sql("select cast(15 as decimal(0, 0))")
+        .ok("SELECT CAST(15 AS DECIMAL(0, 0))");
   }
 
   @Test void testDerivedColumnList() {
@@ -5098,6 +5127,21 @@ public class SqlParserTest {
             + "WHERE (`EMPNO` = 12)");
   }
 
+  /** Test case for
+   * <a href="https://issues.apache.org/jira/browse/CALCITE-6576">[CALCITE-6576]
+   * In SET clause of UPDATE statement, allow column identifiers to be prefixed
+   * with table alias</a>. */
+  @Test void testUpdateTableAlias() {
+    final String sql = "UPDATE mytable AS t SET t.ID=1";
+    final String expected = "UPDATE `MYTABLE` AS `T` SET `T`.`ID` = 1";
+    sql(sql).ok(expected);
+
+    final String sql2 = "UPDATE scott.mytable SET scott.mytable.ID=1";
+    final String expected2 =
+        "UPDATE `SCOTT`.`MYTABLE` SET `SCOTT`.`MYTABLE`.`ID` = 1";
+    sql(sql2).ok(expected2);
+  }
+
   @Test void testMergeSelectSource() {
     final String sql = "merge into emps e "
         + "using (select * from tempemps where deptno is null) t "
@@ -5659,8 +5703,14 @@ public class SqlParserTest {
         .ok("TRIM(BOTH ' ' FROM ((COALESCE(CAST(NULL AS VARCHAR(2))) || "
             + "' ') || COALESCE('junk ', '')))");
 
-    sql("trim(^from^ 'beard')")
-        .fails("(?s).*'FROM' without operands preceding it is illegal.*");
+    expr("trim(^from^ 'beard')")
+        .fails("(?s).*Encountered \"from\" at line 1, column 6\\..*");
+    expr("trim('beard ')")
+        .ok("TRIM(BOTH ' ' FROM 'beard ')");
+    // Test case for [CALCITE-6709] https://issues.apache.org/jira/browse/CALCITE-6709
+    // Parser accepts a call to TRIM() with no arguments
+    expr("trim(^)^")
+        .fails("(?s).*Encountered \"\\)\" at line 1, column 6\\..*");
   }
 
   @Test void testConvertAndTranslate() {
@@ -5690,6 +5740,19 @@ public class SqlParserTest {
         .ok("SELECT TRANSLATE(`COL` USING `UTF8`)\n"
             + "FROM (SELECT 'a' AS `COL`\n"
             + "FROM (VALUES (ROW(TRUE))))");
+  }
+
+  @Test void testConvertOracle() {
+    // If there are 3 params in CONVERT_ORACLE operator, it's valid when
+    // the ORACLE function library is enabled ('fun=oracle').
+    // But the parser can always parse it.
+    expr("convert('abc', utf8, gbk)")
+        .ok("CONVERT('abc', `UTF8`, `GBK`)");
+    expr("convert('abc', utf8)")
+        .ok("CONVERT('abc', `UTF8`)");
+    sql("select convert(name, latin1) as newName from t")
+        .ok("SELECT CONVERT(`NAME`, `LATIN1`) AS `NEWNAME`\n"
+            + "FROM `T`");
   }
 
   @Test void testTranslate3() {
@@ -7548,15 +7611,10 @@ public class SqlParserTest {
   }
 
   @Test void testAddCarets() {
-    assertEquals(
-        "values (^foo^)",
-        SqlParserUtil.addCarets("values (foo)", 1, 9, 1, 12));
-    assertEquals(
-        "abc^def",
-        SqlParserUtil.addCarets("abcdef", 1, 4, 1, 4));
-    assertEquals(
-        "abcdef^",
-        SqlParserUtil.addCarets("abcdef", 1, 7, 1, 7));
+    assertThat(SqlParserUtil.addCarets("values (foo)", 1, 9, 1, 12),
+        is("values (^foo^)"));
+    assertThat(SqlParserUtil.addCarets("abcdef", 1, 4, 1, 4), is("abc^def"));
+    assertThat(SqlParserUtil.addCarets("abcdef", 1, 7, 1, 7), is("abcdef^"));
   }
 
   @Test void testSnapshotForSystemTimeWithAlias() {
@@ -7756,7 +7814,7 @@ public class SqlParserTest {
     SqlSetOption opt = (SqlSetOption) node;
     assertThat(opt.getScope(), equalTo("SYSTEM"));
     SqlPrettyWriter writer = new SqlPrettyWriter();
-    assertThat(writer.format(opt.getName()), equalTo("\"SCHEMA\""));
+    assertThat(writer.format(opt.name()), equalTo("\"SCHEMA\""));
     writer = new SqlPrettyWriter();
     assertThat(writer.format(opt.getValue()), equalTo("TRUE"));
     writer = new SqlPrettyWriter();
@@ -7788,7 +7846,7 @@ public class SqlParserTest {
     opt = (SqlSetOption) node;
     assertThat(opt.getScope(), equalTo(null));
     writer = new SqlPrettyWriter();
-    assertThat(writer.format(opt.getName()), equalTo("\"SCHEMA\""));
+    assertThat(writer.format(opt.name()), equalTo("\"SCHEMA\""));
     assertThat(opt.getValue(), equalTo(null));
     writer = new SqlPrettyWriter();
     assertThat(writer.format(opt),
@@ -9127,7 +9185,7 @@ public class SqlParserTest {
     SqlParser sqlParserReader = sqlParser(new StringReader(query), b -> b);
     SqlNode node1 = sqlParserReader.parseQuery();
     SqlNode node2 = sql(query).node();
-    assertEquals(node2.toString(), node1.toString());
+    assertThat(node1, hasToString(node2.toString()));
   }
 
   @Test void testConfigureFromDialect() {
@@ -9700,7 +9758,7 @@ public class SqlParserTest {
         final String actual =
             sqlNode.toSqlString(UnparsingTesterImpl::simpleWithParensAnsi)
                 .getSql();
-        assertEquals(expected.get(i), converter.apply(actual));
+        assertThat(converter.apply(actual), is(expected.get(i)));
       }
     }
 
@@ -9723,7 +9781,7 @@ public class SqlParserTest {
       final String sql2 = toSqlString(sqlNodeList2, simple());
 
       // Should be the same as we started with.
-      assertEquals(sql1, sql2);
+      assertThat(sql2, is(sql1));
 
       // Now unparse again in the null dialect.
       // If the unparser is not including sufficient parens to override
@@ -9746,7 +9804,7 @@ public class SqlParserTest {
           c -> simpleWithParens(c)
               .withDialect(dialect2);
       final String actual = sqlNode.toSqlString(writerTransform).getSql();
-      assertEquals(expected, converter.apply(actual));
+      assertThat(converter.apply(actual), is(expected));
 
       // Unparse again in Calcite dialect (which we can parse), and
       // minimal parentheses.
@@ -9760,13 +9818,13 @@ public class SqlParserTest {
       final String sql2 = sqlNode2.toSqlString(simple()).getSql();
 
       // Should be the same as we started with.
-      assertEquals(sql1, sql2);
+      assertThat(sql2, is(sql1));
 
       // Now unparse again in the given dialect.
       // If the unparser is not including sufficient parens to override
       // precedence, the problem will show up here.
       final String actual2 = sqlNode.toSqlString(writerTransform).getSql();
-      assertEquals(expected, converter.apply(actual2));
+      assertThat(converter.apply(actual2), is(expected));
 
       // Now unparse with a randomly configured SqlPrettyWriter.
       // (This is a much a test for SqlPrettyWriter as for the parser.)
@@ -9776,7 +9834,7 @@ public class SqlParserTest {
       SqlNode sqlNode4 =
           parseStmtAndHandleEx(factory2, sql1, parser -> { });
       final String sql4 = sqlNode4.toSqlString(simple()).getSql();
-      assertEquals(sql1, sql4);
+      assertThat(sql4, is(sql1));
     }
 
     @Override public void checkExp(SqlTestFactory factory, StringAndPos sap,
@@ -9790,7 +9848,7 @@ public class SqlParserTest {
           c -> simpleWithParens(c)
               .withDialect(AnsiSqlDialect.DEFAULT);
       final String actual = sqlNode.toSqlString(writerTransform).getSql();
-      assertEquals(expected, converter.apply(actual));
+      assertThat(converter.apply(actual), is(expected));
 
       // Unparse again in Calcite dialect (which we can parse), and
       // minimal parentheses.
@@ -9808,13 +9866,13 @@ public class SqlParserTest {
           sqlNode2.toSqlString(UnaryOperator.identity()).getSql();
 
       // Should be the same as we started with.
-      assertEquals(sql1, sql2);
+      assertThat(sql2, is(sql1));
 
       // Now unparse again in the null dialect.
       // If the unparser is not including sufficient parens to override
       // precedence, the problem will show up here.
       final String actual2 = sqlNode2.toSqlString(null, true).getSql();
-      assertEquals(expected, converter.apply(actual2));
+      assertThat(converter.apply(actual2), is(expected));
     }
 
     @Override public void checkFails(SqlTestFactory factory,

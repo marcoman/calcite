@@ -42,7 +42,7 @@ import static java.util.Objects.requireNonNull;
  * behavior only by providing strategy objects, not by overriding methods in a
  * subclass.
  */
-public class SqlBasicFunction extends SqlFunction {
+public final class SqlBasicFunction extends SqlFunction {
   private final SqlSyntax syntax;
   private final boolean deterministic;
   private final SqlOperandHandler operandHandler;
@@ -67,7 +67,7 @@ public class SqlBasicFunction extends SqlFunction {
    * @param category Categorization for function
    * @param monotonicityInference Strategy to infer monotonicity of a call
    */
-  protected SqlBasicFunction(String name, SqlKind kind, SqlSyntax syntax,
+  private SqlBasicFunction(String name, SqlKind kind, SqlSyntax syntax,
       boolean deterministic, SqlReturnTypeInference returnTypeInference,
       @Nullable SqlOperandTypeInference operandTypeInference,
       SqlOperandHandler operandHandler,
@@ -157,6 +157,10 @@ public class SqlBasicFunction extends SqlFunction {
 
   @Override public boolean isDeterministic() {
     return deterministic;
+  }
+
+  @Override public @Nullable SqlOperator reverse() {
+    return isSymmetrical() ? this : null;
   }
 
   @Override public SqlMonotonicity getMonotonicity(SqlOperatorBinding call) {

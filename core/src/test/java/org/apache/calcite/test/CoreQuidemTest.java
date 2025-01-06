@@ -26,6 +26,8 @@ import net.hydromatic.quidem.Quidem;
 import java.sql.Connection;
 import java.util.Collection;
 
+import static org.apache.calcite.util.Util.discard;
+
 /**
  * Test that runs every Quidem file in the "core" module as a test.
  */
@@ -68,13 +70,37 @@ class CoreQuidemTest extends QuidemTest {
               .with(CalciteConnectionProperty.FUN, SqlLibrary.CALCITE.fun)
               .with(CalciteAssert.Config.SCOTT)
               .connect();
-        case "scott-rounding-half-up":
+        case "scott-checked-rounding-half-up":
+          discard(CustomTypeSystems.ROUNDING_MODE_HALF_UP);
+          return CalciteAssert.that()
+              .with(CalciteConnectionProperty.PARSER_FACTORY,
+                  ExtensionDdlExecutor.class.getName() + "#PARSER_FACTORY")
+              // Use bigquery conformance, which forces checked arithmetic
+              .with(CalciteConnectionProperty.CONFORMANCE, SqlConformanceEnum.BIG_QUERY)
+              .with(CalciteConnectionProperty.FUN, SqlLibrary.CALCITE.fun)
+              .with(CalciteConnectionProperty.TYPE_SYSTEM,
+                  CustomTypeSystems.class.getName() + "#ROUNDING_MODE_HALF_UP")
+              .with(CalciteAssert.Config.SCOTT)
+              .connect();
+        case "scott-negative-scale":
+          discard(CustomTypeSystems.NEGATIVE_SCALE);
           return CalciteAssert.that()
               .with(CalciteConnectionProperty.PARSER_FACTORY,
                   ExtensionDdlExecutor.class.getName() + "#PARSER_FACTORY")
               .with(CalciteConnectionProperty.FUN, SqlLibrary.CALCITE.fun)
               .with(CalciteConnectionProperty.TYPE_SYSTEM,
-                  CustomRelDataTypeSystem.class.getName() + "#ROUNDING_MODE_HALF_UP")
+                  CustomTypeSystems.class.getName() + "#NEGATIVE_SCALE")
+              .with(CalciteAssert.Config.SCOTT)
+              .connect();
+        case "scott-negative-scale-rounding-half-up":
+          discard(CustomTypeSystems.NEGATIVE_SCALE_ROUNDING_MODE_HALF_UP);
+          return CalciteAssert.that()
+              .with(CalciteConnectionProperty.PARSER_FACTORY,
+                  ExtensionDdlExecutor.class.getName() + "#PARSER_FACTORY")
+              .with(CalciteConnectionProperty.FUN, SqlLibrary.CALCITE.fun)
+              .with(CalciteConnectionProperty.TYPE_SYSTEM,
+                  CustomTypeSystems.class.getName()
+                      + "#NEGATIVE_SCALE_ROUNDING_MODE_HALF_UP")
               .with(CalciteAssert.Config.SCOTT)
               .connect();
         case "scott-lenient":
@@ -95,6 +121,15 @@ class CoreQuidemTest extends QuidemTest {
                   ExtensionDdlExecutor.class.getName() + "#PARSER_FACTORY")
               .with(CalciteConnectionProperty.CONFORMANCE,
                   SqlConformanceEnum.MYSQL_5)
+              .with(CalciteAssert.Config.SCOTT)
+              .connect();
+        case "scott-oracle":
+          // Same as "scott", but uses Oracle conformance.
+          return CalciteAssert.that()
+              .with(CalciteConnectionProperty.PARSER_FACTORY,
+                  ExtensionDdlExecutor.class.getName() + "#PARSER_FACTORY")
+              .with(CalciteConnectionProperty.CONFORMANCE,
+                  SqlConformanceEnum.ORACLE_10)
               .with(CalciteAssert.Config.SCOTT)
               .connect();
         case "steelwheels":

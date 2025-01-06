@@ -517,7 +517,7 @@ class AggConverter implements SqlVisitor<Void> {
       approximate = true;
     }
     final RelCollation collation;
-    if (orderList == null || orderList.size() == 0) {
+    if (orderList == null || orderList.isEmpty()) {
       collation = RelCollations.EMPTY;
     } else {
       try {
@@ -539,6 +539,7 @@ class AggConverter implements SqlVisitor<Void> {
     }
     final AggregateCall aggCall =
         AggregateCall.create(
+            call.getParserPosition(),
             aggFunction,
             distinct,
             approximate,
@@ -596,7 +597,7 @@ class AggConverter implements SqlVisitor<Void> {
   /**
    * If an expression is structurally identical to one of the group-by
    * expressions, returns a reference to the expression, otherwise returns
-   * null.
+   * -1.
    */
   int lookupGroupExpr(SqlNode expr) {
     return SqlUtil.indexOfDeep(groupExprs, expr, Litmus.IGNORE);
